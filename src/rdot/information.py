@@ -29,13 +29,17 @@ def DKL(p, q, axis=None):
 
 # Helper function
 
-def information_rate(px: np.ndarray, pxhat_x: np.ndarray) -> float:
+def information_rate(px: np.ndarray, qxhat_x: np.ndarray) -> float:
     """Compute the information rate $I(X;\hat{X})$ of a joint distribution defind by $P(X)$ and $P(\hat{X}|X)$
     
     Args: 
         px: array of shape `|X|` the prior probability of an input symbol (i.e., the source)    
 
-        pxhat_x: array of shape `(|X|, |X_hat|)` the probability of an output symbol given the input        
+        qxhat_x: array of shape `(|X|, |X_hat|)` the probability of an output symbol given the input        
     """
-    pXY = joint(pY_X=pxhat_x, pX=px)
-    return MI(pXY=pXY)
+    pXY = joint(pY_X=qxhat_x, pX=px)
+    # return MI(pXY=pXY)
+    mi = MI(pXY=pXY)
+    if mi < 0 and not np.isclose(mi, 0.):
+        breakpoint()
+    return mi
