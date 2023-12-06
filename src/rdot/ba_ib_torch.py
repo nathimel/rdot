@@ -6,22 +6,25 @@ from .distortions import ib_kl, expected_distortion
 from multiprocessing import Pool
 from tqdm import tqdm
 
+def random_stochastic_matrix(shape: tuple[int], alpha = 1.) -> torch.Tensor:
+    """Initialize a stochastic matrix (2D tensor) that sums to 1. along the rows."""
+    energies = alpha * torch.randn(*shape)
+    return torch.softmax(energies, dim=1)
+
 def ib_method(
     pxy: np.ndarray,
     betas: np.ndarray,
     num_processes: int = 1,
     **kwargs,
 ) -> list[tuple[float]]:
-    """Iterate the BA algorithm for an array of values of beta."""
-
-    ba = lambda beta: blahut_arimoto_ib(pxy, beta, **kwargs)
+    """Iterate the BA algorithm for an array of values of beta. By default, implement reverse deterministic annealing, and implement multiprocessing otherwise."""
 
     if num_processes > 1:
         with Pool(num_processes) as p:
             async_results = [
                 p.apply_async(
-                    ba,
-                    args=[beta],
+                    args=[pxy, beta],
+                    kwds=kwargs,
                 )
                 for beta in betas
             ]
@@ -30,7 +33,13 @@ def ib_method(
         results = [async_result.get() for async_result in async_results]
 
     else:
-        results = reversed([ba(beta) for beta in tqdm(reversed(betas))])
+        # Reverse deterministic annealing
+        results = []
+        q = random_stochastic_matrix((len(pxy), len(pxy))).numpy() # or np.eye
+        for beta in tqdm(reversed(betas)):
+            # initial encoder to BA at each step is result of previous opt
+            q, rate, dist = blahut_arimoto_ib(pxy, beta, qxhat_x=q, **kwargs)
+            results.append((q, rate, dist))
 
     return results
 
@@ -38,6 +47,7 @@ def ib_method(
 def blahut_arimoto_ib(
     pxy: np.ndarray,
     beta: float,
+    qxhat_x: np.ndarray = None,
     max_it: int = 200,
     eps: float = 1e-5,
     ignore_converge: bool = False,
@@ -61,11 +71,13 @@ def blahut_arimoto_ib(
     # Do everything in log space to prevent numerical underflow 
     ln_pxy = torch.log(torch.from_numpy(pxy))
 
-    ln_px = torch.logsumexp(ln_pxy, dim=1)
-    ln_py_x = ln_pxy - torch.logsumexp(ln_pxy, dim=1, keepdim=True)
+    ln_px = torch.logsumexp(ln_pxy, dim=1) # `[x]`
+    ln_py_x = ln_pxy - torch.logsumexp(ln_pxy, dim=1, keepdim=True)  # `[x, y]`
 
-    # initial encoder
-    ln_qxhat_x = (torch.randn(len(ln_px), len(ln_px))).log_softmax(dim=1)
+    # initial encoder, shape `[x, x] = [x, xhat]`
+    if qxhat_x is not None:
+        ln_qxhat_x = torch.log(torch.from_numpy(qxhat_x))
+    ln_qxhat_x = torch.log(random_stochastic_matrix((len(ln_px), len(ln_px))))
 
     # initial q(xhat), see `update_eqs`
     ln_qxhat = torch.logsumexp(ln_px + ln_qxhat_x, dim=0)
@@ -75,23 +87,41 @@ def blahut_arimoto_ib(
         ln_qxhat_x: torch.Tensor,
     ) -> tuple[torch.Tensor]:
         """Update the required self-consistent equations."""
-        # q(xhat) = sum_x p(x) q(xhat | x)
+        # q(xhat) = sum_x p(x) q(xhat | x), 
+        # shape `[xhat]`
         ln_qxhat = torch.logsumexp(ln_px + ln_qxhat_x, dim=0)
 
-        # q(x,xhat) = p(x) q(xhat|x)
+        # q(x,xhat) = p(x) q(xhat|x), 
+        # shape `[x, xhat]`
         ln_qxxhat = ln_px + ln_qxhat_x
 
-        # p(x|x_hat)
+        # p(x|x_hat) = q(x, xhat) / q(xhat),
+        # shape `[xhat, x]`
         ln_qx_xhat = ln_qxxhat - ln_qxhat
 
-        # q(y|xhat) = sum_x p(y|x) q(x | xhat)
-        ln_qy_xhat = torch.logsumexp(ln_qx_xhat + ln_py_x, dim=0)
+        # q(y|xhat) = sum_x p(y|x) q(x | xhat),
+        # shape `[xhat, y]`
+        # breakpoint()
+        ln_qy_xhat = torch.logsumexp(
+            # shape `[xhat, x, y]`
+            ln_py_x[None, :, :] + ln_qx_xhat[:, :, None],
+            dim=1, # sum over x
+        )
+        # breakpoint()
 
-        # d(x, xhat) = E[D[ p(y|x) | q(y|xhat) ]]
+        # Alternative
+        # = 1/q(xhat) sum_x p(x,y) q(xhat|x)
+        ln_qxyxhat = ln_qxhat_x[:, None, :] + ln_pxy[:, :, None] #`[x, y, xhat]`
+        ln_qxhaty = torch.logsumexp(ln_qxyxhat, dim=0).T # `[xhat, y]`
+        ln_qxhat = torch.logsumexp(ln_qxhaty, dim=1, keepdim=True) # `[xhat, 1]`
+        ln_qy_xhat = ln_qxhaty - ln_qxhat # `[xhat, y]`
+
+        # d(x, xhat) = E[D[ p(y|x) | q(y|xhat) ]],
+        # shape `[x, xhat]`
         dist_mat = torch.from_numpy(ib_kl(ln_py_x.exp(), ln_qy_xhat.exp()))
 
-        breakpoint()
-        # problem: converting to log space makes differences in distortion too small, so that we never get the deterministic mapping! why?
+        # p(xhat | x) = p(xhat) exp(- beta * d(xhat, x)) / Z(x),
+        # shape `[x, xhat]`
         ln_qxhat_x = torch.log_softmax(ln_qxhat - beta * dist_mat, dim=1)
 
         return ln_qxhat, ln_qxhat_x, ln_qy_xhat
@@ -120,4 +150,4 @@ def blahut_arimoto_ib(
             converged = it == max_it or np.abs(distortion - distortion_prev) < eps
 
     rate = information_rate(ln_px.exp().numpy(), ln_qxhat_x.exp().numpy())
-    return ln_qxhat_x.exp(), rate, distortion
+    return ln_qxhat_x.exp().numpy(), rate, distortion

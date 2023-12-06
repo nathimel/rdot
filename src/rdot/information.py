@@ -38,8 +38,7 @@ def information_rate(px: np.ndarray, qxhat_x: np.ndarray) -> float:
         qxhat_x: array of shape `(|X|, |X_hat|)` the probability of an output symbol given the input        
     """
     pXY = joint(pY_X=qxhat_x, pX=px)
-    # return MI(pXY=pXY)
     mi = MI(pXY=pXY)
-    if mi < 0 and not np.isclose(mi, 0.):
-        breakpoint()
+    if mi < 0. and not np.isclose(mi, 0.):
+        raise Exception
     return mi

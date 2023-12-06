@@ -65,7 +65,7 @@ def blahut_arimoto(
     # qxhat_x = np.tile(px, (dist_mat.shape[1], 1)).T
     qxhat_x = np.full((len(px), len(px)),  1/len(px))
     qxhat = px @ qxhat_x
-    breakpoint() # numerical underflow
+    breakpoint() # numerical underflow for gaussian case
 
     def update_eqs(
         qxhat: np.ndarray,
@@ -76,7 +76,6 @@ def blahut_arimoto(
         qxhat = px @ qxhat_x
 
         # q(x_hat | x) = q(x_hat) exp(- beta * d(x_hat, x)) / Z(x)
-        breakpoint()
         qxhat_x = np.exp(-beta * dist_mat) * qxhat
         qxhat_x /= np.expand_dims(np.sum(qxhat_x, 1), 1)
 

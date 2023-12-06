@@ -197,16 +197,15 @@ class TestIB:
 
     def test_ba_beta_0(self):
 
-        # define each p(y|x) to be a gaussian
-        py_x = np.array([[np.exp(-(i - j)**2) for j in range(10)] for i in range(10)])
+        # Make sure we test when |Y| != |X|, e.g. |X| = 100, |Y| = 10
+        # Gaussian-like p(y|x)
+        py_x = np.array([[np.exp(-(i - j)**2) for j in range(0, 100, 10)] for i in range(100)])
         py_x /= py_x.sum(axis=1)[:, None]
         # get joint by multiplying by p(x)
-        px = np.full(py_x.shape[0], 1/10)
-        pxy = py_x * px
+        px = np.full(py_x.shape[0], 1/100)
+        pxy = py_x * px[:, None]
         
-        # distortion matrix
-
-        q, rate, dist = ba_ib.blahut_arimoto_ib(
+        q, rate, dist = ba_ib_torch.blahut_arimoto_ib(
             pxy=pxy,
             beta=0., # evaluation beta
         )
@@ -248,4 +247,4 @@ class TestIB:
         # Test many values of beta to sweep out a curve. 
         betas = np.logspace(-5, 5, num=100)        
 
-        rd_values = [result for result in ba_ib.ib_method(pxy, betas)]
+        rd_values = [result for result in ba_ib_torch.ib_method(pxy, betas)]

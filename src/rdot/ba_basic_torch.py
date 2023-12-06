@@ -13,7 +13,7 @@ def ba_iterate(
     num_processes: int = 1,
     **kwargs,
 ) -> list[tuple[float]]:
-    """Iterate the BA algorithm for an array of values of beta."""
+    """Iterate the BA algorithm for an array of values of beta. By default, implement reverse deterministic annealing, and implement multiprocessing otherwise."""
 
     # Unlike the I.B. objective, there are guaranteed results about the convergence to global minima for the 'vanilla' rate distortion objective, using the BA algorithm. This suggests we should not need to use reverse deterministic annealing, although it is unlikely that that hurts.
     ba = lambda beta: blahut_arimoto(px, dist_mat, beta, **kwargs)    
@@ -65,10 +65,7 @@ def blahut_arimoto(
         a tuple of (qxhat_x, rate, distortion) values. This is the optimal encoder `qxhat_x`, such that the  `rate` (in bits) of compressing X into X_hat, is minimized for the level of `distortion` between X, X_hat
     """
     # start with iid conditional distribution
-    # qxhat_x = np.tile(px, (dist_mat.shape[1], 1)).T
     qxhat_x = np.full((len(px), len(px)),  1/len(px))
-
-    # qxhat = px @ qxhat_x
 
     # convert to logspace
     dist_mat = torch.from_numpy(dist_mat)
@@ -84,11 +81,7 @@ def blahut_arimoto(
         # q(x_hat) = sum p(x) q(x_hat | x)
         ln_qxhat = torch.logsumexp(ln_px + ln_qxhat_x, dim=0)
 
-
         # q(x_hat | x) = q(x_hat) exp(- beta * d(x_hat, x)) / Z(x)
-        # qxhat_x = np.exp(-beta * dist_mat) * qxhat
-        # qxhat_x /= np.expand_dims(np.sum(qxhat_x, 1), 1)
-
         ln_qxhat_x = torch.log_softmax(ln_qxhat.exp() - beta*dist_mat, dim=1)
 
         return (ln_qxhat, ln_qxhat_x)
