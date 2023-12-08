@@ -125,12 +125,6 @@ class TestRDGaussianQuadratic:
 
     """Gaussian random variable with quadratic distortion"""
 
-    def test_compute_rate(self):
-        pass
-
-    def test_compute_distortion(self):
-        pass
-
     def test_ba_beta_0(self):
         # (truncated) Gaussian input with quadratic distortion
         x = np.linspace(-5,5,1000) # source alphabet
@@ -218,12 +212,13 @@ class TestIB:
 
     def test_ba_beta_1e10(self):
 
-        # define each p(y|x) to be a gaussian
-        py_x = np.array([[np.exp(-(i - j)**2) for j in range(10)] for i in range(10)])
+        # Make sure we test when |Y| != |X|, e.g. |X| = 100, |Y| = 10
+        # Gaussian-like p(y|x)
+        py_x = np.array([[np.exp(-(i - j)**2) for j in range(0, 100, 10)] for i in range(100)])
         py_x /= py_x.sum(axis=1)[:, None]
         # get joint by multiplying by p(x)
-        px = np.full(py_x.shape[0], 1/10)
-        pxy = py_x * px
+        px = np.full(py_x.shape[0], 1/100)
+        pxy = py_x * px[:, None]
         
         # distortion matrix
         # breakpoint()
@@ -237,7 +232,8 @@ class TestIB:
 
     def test_curve(self):
 
-        # define each p(y|x) to be gaussian-like
+        # Now we test when |Y| = |X|, e.g. |X| = 10, |Y| = 10
+        # Gaussian-like p(y|x)
         py_x = np.array([[np.exp(-(i - j)**2) for j in range(10)] for i in range(10)])
         py_x /= py_x.sum(axis=1)[:, None]
         # get joint by multiplying by p(x)

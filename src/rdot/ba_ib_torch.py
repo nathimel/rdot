@@ -3,7 +3,7 @@ import numpy as np
 from .probability import PRECISION
 from .information import information_rate, DKL
 from .distortions import ib_kl, expected_distortion
-from multiprocessing import Pool
+from multiprocessing import Pool, cpu_count
 from tqdm import tqdm
 
 def random_stochastic_matrix(shape: tuple[int], alpha = 1.) -> torch.Tensor:
@@ -14,32 +14,54 @@ def random_stochastic_matrix(shape: tuple[int], alpha = 1.) -> torch.Tensor:
 def ib_method(
     pxy: np.ndarray,
     betas: np.ndarray,
-    num_processes: int = 1,
+    num_processes: int = cpu_count(),
+    num_restarts: int = 1,
     **kwargs,
 ) -> list[tuple[float]]:
-    """Iterate the BA algorithm for an array of values of beta. By default, implement reverse deterministic annealing, and implement multiprocessing otherwise."""
+    """Iterate the BA algorithm for an array of values of beta. 
+    
+    By default, implement reverse deterministic annealing, and implement multiprocessing otherwise.
+    
+    Args:
+        pxy: 2D ndarray, the joint distribution p(x,y)
 
-    if num_processes > 1:
+        betas: 1D array, values of beta to search
+
+        num_processes: number of CPU cores to pass to multiprocessing.Pool to compute different solutions in parallel for each beta. Each beta solution is still computed serially.
+
+        num_restarts: number of initial conditions to try, since we only have convergence to local optima guaranteed.
+    """
+
+    # Reverse deterministic annealing
+    results = []
+    q = random_stochastic_matrix((len(pxy), len(pxy))).numpy() # or np.eye
+    betas = list(reversed(betas)) # assumes beta was passed low to high
+    for beta in tqdm(betas):
+
         with Pool(num_processes) as p:
             async_results = [
                 p.apply_async(
+                    blahut_arimoto_ib,
                     args=[pxy, beta],
                     kwds=kwargs,
                 )
-                for beta in betas
+                for _ in range(num_restarts)
             ]
-            p.close()
-            p.join()
-        results = [async_result.get() for async_result in async_results]
+        candidates = [x.get() for x in async_results]
+        best = min(candidates, key=lambda x: x[1] + beta * x[2])
+        results.append(best)
 
-    else:
-        # Reverse deterministic annealing
-        results = []
-        q = random_stochastic_matrix((len(pxy), len(pxy))).numpy() # or np.eye
-        for beta in tqdm(reversed(betas)):
-            # initial encoder to BA at each step is result of previous opt
-            q, rate, dist = blahut_arimoto_ib(pxy, beta, qxhat_x=q, **kwargs)
-            results.append((q, rate, dist))
+        # initial encoder to BA at each step is result of previous opt
+        # candidates = []
+        # for _ in range(num_restarts):
+        #     result = blahut_arimoto_ib(pxy, beta, qxhat_x=q, **kwargs)
+        #     candidates.append(result)
+        # results.append(best_candidate)
+        # q = best_candidate[0]
+
+        # result = blahut_arimoto_ib(pxy, beta, qxhat_x=q, **kwargs)
+        # results.append(result)
+        # q = result[0]
 
     return results
 
@@ -66,7 +88,9 @@ def blahut_arimoto_ib(
         ignore_converge: whether to run the optimization until `max_it`, ignoring the stopping criterion specified by `eps`.
 
     Returns:
-        a tuple of (qxhat_x, rate, distortion) values. This is the optimal encoder `qxhat_x`, such that the  `rate` (in bits) of compressing X into X_hat, is minimized for the level of `distortion` between X, X_hat
+        a tuple of `(qxhat_x, rate, distortion, accuracy)` values. 
+        
+        This is the optimal encoder `qxhat_x`, such that the  `rate` (in bits) of compressing X into X_hat, is minimized for the level of `distortion` between X, X_hat, or equivalently the `accuracy` between them is maximized
     """
     # Do everything in log space to prevent numerical underflow 
     ln_pxy = torch.log(torch.from_numpy(pxy))
@@ -102,6 +126,7 @@ def blahut_arimoto_ib(
         # q(y|xhat) = sum_x p(y|x) q(x | xhat),
         # shape `[xhat, y]`
         # breakpoint()
+        # NOTE: Problem: this does not yield a distribution!
         ln_qy_xhat = torch.logsumexp(
             # shape `[xhat, x, y]`
             ln_py_x[None, :, :] + ln_qx_xhat[:, :, None],
@@ -109,12 +134,17 @@ def blahut_arimoto_ib(
         )
         # breakpoint()
 
-        # Alternative
+
+
+        # Alternative, but doesn't appear to strictly satisfy update eqs
         # = 1/q(xhat) sum_x p(x,y) q(xhat|x)
         ln_qxyxhat = ln_qxhat_x[:, None, :] + ln_pxy[:, :, None] #`[x, y, xhat]`
         ln_qxhaty = torch.logsumexp(ln_qxyxhat, dim=0).T # `[xhat, y]`
         ln_qxhat = torch.logsumexp(ln_qxhaty, dim=1, keepdim=True) # `[xhat, 1]`
         ln_qy_xhat = ln_qxhaty - ln_qxhat # `[xhat, y]`
+
+
+
 
         # d(x, xhat) = E[D[ p(y|x) | q(y|xhat) ]],
         # shape `[x, xhat]`
@@ -138,8 +168,8 @@ def blahut_arimoto_ib(
 
         # for convergence check
         distortion = expected_distortion(
-            ln_px.exp().numpy(), 
-            ln_qxhat_x.exp().numpy(), 
+            ln_px.exp().numpy(),
+            ln_qxhat_x.exp().numpy(),
             ib_kl(ln_py_x.exp(), ln_qy_xhat.exp()),
         )
 
@@ -150,4 +180,6 @@ def blahut_arimoto_ib(
             converged = it == max_it or np.abs(distortion - distortion_prev) < eps
 
     rate = information_rate(ln_px.exp().numpy(), ln_qxhat_x.exp().numpy())
-    return ln_qxhat_x.exp().numpy(), rate, distortion
+    accuracy = information_rate(ln_qxhat.exp().squeeze().numpy(), ln_qy_xhat.exp().numpy())
+
+    return ln_qxhat_x.exp().numpy(), rate, distortion, accuracy
