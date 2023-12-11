@@ -1,17 +1,16 @@
 import numpy as np
 from scipy.special import logsumexp, softmax
+
 from .probability import PRECISION
 from .information import information_rate
 from .distortions import expected_distortion, ib_kl
 
-from multiprocessing import Pool, cpu_count
 from tqdm import tqdm
 
 def ib_method(
     pxy: np.ndarray,
     betas: np.ndarray,
-    num_processes: int = cpu_count(),
-    num_restarts: int = 10,
+    num_restarts: int = 1,
     **kwargs,
 ) -> list[tuple[float]]:
     """Iterate the BA algorithm for an array of values of beta. 
@@ -30,19 +29,6 @@ def ib_method(
     # Reverse deterministic annealing
     results = []    
     betas = list(reversed(betas)) # assumes beta was passed low to high
-    # for beta in tqdm(betas):
-    #     with Pool(num_processes) as p:
-    #         async_results = [
-    #             p.apply_async(
-    #                 blahut_arimoto_ib,
-    #                 args=[pxy, beta],
-    #                 kwds=kwargs,
-    #             )
-    #             for _ in range(num_restarts)
-    #         ]
-    #     candidates = [x.get() for x in async_results]
-    #     best = min(candidates, key=lambda x: x[1] + beta * x[2])
-    #     results.append(best)
 
     init_q = np.eye(len(pxy))
     for beta in tqdm(betas):
@@ -87,7 +73,7 @@ def blahut_arimoto_ib(
         ignore_converge: whether to run the optimization until `max_it`, ignoring the stopping criterion specified by `eps`.
 
     Returns:
-        a tuple of (qxhat_x, rate, distortion) values. This is the optimal encoder `qxhat_x`, such that the  `rate` (in bits) of compressing X into X_hat, is minimized for the level of `distortion` between X, X_hat
+        a tuple of `(qxhat_x, rate, distortion, accuracy)` values. This is the optimal encoder `qxhat_x`, such that the  `rate` (in bits) of compressing X into X_hat, is minimized for the level of `distortion` between X, X_hat
     """
     # Do everything in logspace for stability
     ln_pxy = np.log(pxy + PRECISION)

@@ -27,4 +27,4 @@ def quadratic(x: np.ndarray, y: np.ndarray) -> np.ndarray:
 
 def ib_kl(py_x: np.ndarray, qy_xhat: np.ndarray) -> np.ndarray:
     # D[p(y|x) || q(y|xhat)]
-    return np.array([[DKL(p, q) for p in py_x] for q in qy_xhat])
+    return np.array([[DKL(x, xhat) for x in py_x] for xhat in qy_xhat])

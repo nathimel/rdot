@@ -1,40 +1,17 @@
 import numpy as np
 from scipy.special import logsumexp
-# from .probability import PRECISION
 from .information import information_rate
 from .distortions import expected_distortion
-from multiprocessing import Pool
 
 def ba_iterate(
     px: np.ndarray,
     dist_mat: np.ndarray,
     betas: np.ndarray,
-    num_processes: int = 1,
     **kwargs,
 ) -> list[tuple[float]]:
     """Iterate the BA algorithm for an array of values of beta."""
-
     # Unlike the I.B. objective, there are guaranteed results about the convergence to global minima for the 'vanilla' rate distortion objective, using the BA algorithm. This suggests we should not need to use reverse deterministic annealing, although it is unlikely that that hurts.
-    ba = lambda beta: blahut_arimoto(px, dist_mat, beta, **kwargs)    
-
-    if num_processes > 1:
-        with Pool(num_processes) as p:
-            async_results = [
-                p.apply_async(
-                    ba,
-                    args=[beta],
-                )
-                for beta in betas
-            ]
-            p.close()
-            p.join()
-        results = [async_result.get() for async_result in async_results]
-
-    else:
-        results = [ba(beta) for beta in betas]
-
-    return results
-
+    return [blahut_arimoto(px, dist_mat, beta, **kwargs) for beta in betas]
 
 
 def blahut_arimoto(
