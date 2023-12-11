@@ -40,6 +40,6 @@ def information_rate(pA: np.ndarray, pB_A: np.ndarray) -> float:
     pXY = joint(pY_X=pB_A, pX=pA)
     mi = MI(pXY=pXY)
     if mi < 0. and not np.isclose(mi, 0.):
-        # breakpoint()
+        breakpoint()
         raise Exception
     return mi

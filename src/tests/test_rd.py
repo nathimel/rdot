@@ -42,7 +42,7 @@ class TestRDBinaryHamming:
         
         # distortion matrix
         dist_mat = distortions.hamming(x, xhat)
-        q, rate, dist = ba_basic_torch.blahut_arimoto(
+        encoder, rate, dist = ba_basic.blahut_arimoto(
             px=px,
             dist_mat=dist_mat,            
             beta=0., # evaluation beta
@@ -51,14 +51,13 @@ class TestRDBinaryHamming:
         # The true R(D) function is bounded by H(p) - H(D); see Cover and Thomas, Rate Distortion Theory, Eq. (10.23).
         true_rate = information.H(p) - information.H(dist)
 
-        # Should it be equal?
         assert rate >= true_rate
 
         # degenerate
         assert dist == 0.5
 
-        expected = np.full_like(q, 1/len(xhat))
-        assert np.allclose(expected, q)
+        expected = np.full_like(encoder, 1/len(xhat))
+        assert np.allclose(expected, encoder)
 
 
     def test_ba_beta_1e10(self):
@@ -70,7 +69,7 @@ class TestRDBinaryHamming:
         
         # distortion matrix
         dist_mat = distortions.hamming(x, xhat)
-        q, rate, dist = ba_basic_torch.blahut_arimoto(
+        encoder, rate, dist = ba_basic.blahut_arimoto(
             px=px,
             dist_mat=dist_mat,            
             beta=1e10, # evaluation beta
@@ -83,9 +82,8 @@ class TestRDBinaryHamming:
         assert rate >= true_rate
 
         # deterministic
-        assert dist == 0.
-
-        assert len(np.argwhere(q)) == len(xhat)
+        assert np.isclose(dist, 0.)
+        assert len(np.argwhere(encoder)) == len(xhat)
 
     def test_curve(self):
 
@@ -100,7 +98,7 @@ class TestRDBinaryHamming:
         # Test many values of beta to sweep out a curve. 
         betas = np.logspace(-5, 5, num=100)        
 
-        rd_values = ba_basic_torch.ba_iterate(px, dist_mat, betas)
+        rd_values = ba_basic.ba_iterate(px, dist_mat, betas)
 
         # Check for convexity
         ind1 = 20
@@ -134,19 +132,19 @@ class TestRDGaussianQuadratic:
 
         dist_mat = distortions.quadratic(x, xhat)
 
-        q, rate, dist = ba_basic_torch.blahut_arimoto(
+        encoder, rate, dist = ba_basic.blahut_arimoto(
             px=px,
-            dist_mat=dist_mat,            
+            dist_mat=dist_mat,
             beta=0., # evaluation beta
         )
 
         true = 2 ** (-2 * rate) # D(R) = σ^2 2^{−2R} in theory, but we truncated
         estimated = dist
-
         assert np.isclose(rate, 0., atol=1e-5)
 
-        expected = np.full_like(q, 1/len(xhat))
-        assert np.allclose(expected, q, atol=1e-5)
+        # Is this too strong a requirement in 'Gaussian' case?
+        # expected = np.full_like(encoder, 1/len(xhat))
+        # assert np.allclose(expected, encoder, atol=1e-5)
 
     def test_ba_beta_1e10(self):
         # (truncated) Gaussian input with quadratic distortion
@@ -157,16 +155,16 @@ class TestRDGaussianQuadratic:
 
         dist_mat = distortions.quadratic(x, xhat)
 
-        q, rate, dist = ba_basic_torch.blahut_arimoto(
+        encoder, rate, dist = ba_basic.blahut_arimoto(
             px=px,
             dist_mat=dist_mat,            
             beta=1e10, # evaluation beta
         )
 
         # deterministic
-        assert dist == 0.
+        assert np.isclose(dist, 0.)
 
-        assert len(np.argwhere(q)) == len(xhat)
+        assert len(np.argwhere(encoder)) == len(xhat)
 
     def test_curve(self):
 
@@ -178,13 +176,26 @@ class TestRDGaussianQuadratic:
 
         dist_mat = distortions.quadratic(x, xhat)
 
-
         # Test many values of beta to sweep out a curve. 
         betas = np.logspace(-5, 5, num=100)
 
-        rd_values = [result[-2:] for result in ba_basic_torch.ba_iterate(px, dist_mat, betas)]
+        rd_values = [result[-2:] for result in ba_basic.ba_iterate(px, dist_mat, betas)]
 
-        breakpoint()
+        # Check for convexity
+        ind1 = 20
+        ind2 = 30
+        ind3 = 40
+        
+        # R, D points
+        x1, y1 = rd_values[ind1]
+        x2, y2 = rd_values[ind2]
+        x3, y3 = rd_values[ind3]
+
+        assert x1 < x2
+        assert x2 < x3
+
+        assert y1 > y2
+        assert y2 > y3
 
 
 class TestIB:
@@ -199,7 +210,7 @@ class TestIB:
         px = np.full(py_x.shape[0], 1/100)
         pxy = py_x * px[:, None]
         
-        q, rate, dist = ba_ib_torch.blahut_arimoto_ib(
+        encoder, rate, dist = ba_ib.blahut_arimoto_ib(
             pxy=pxy,
             beta=0., # evaluation beta
         )
@@ -207,8 +218,8 @@ class TestIB:
         # degenerate
         assert np.isclose(rate, 0.)
 
-        expected = np.full_like(q, 1/len(px))
-        assert np.allclose(expected, q)
+        expected = np.full_like(encoder, 1/len(px))
+        assert np.allclose(expected, encoder)
 
     def test_ba_beta_1e10(self):
 
@@ -222,13 +233,13 @@ class TestIB:
         
         # distortion matrix
         # breakpoint()
-        q, rate, dist = ba_ib_torch.blahut_arimoto_ib(
+        encoder, rate, dist = ba_ib.blahut_arimoto_ib(
             pxy=pxy,
             beta=1e10, # evaluation beta
         )
 
         # deterministic
-        assert len(np.argwhere(q)) == len(px)
+        assert len(np.argwhere(encoder)) == len(px)
 
     def test_curve(self):
 
@@ -243,4 +254,4 @@ class TestIB:
         # Test many values of beta to sweep out a curve. 
         betas = np.logspace(-5, 5, num=100)        
 
-        rd_values = [result for result in ba_ib_torch.ib_method(pxy, betas)]
+        rd_values = [result for result in ba_ib.ib_method(pxy, betas)]

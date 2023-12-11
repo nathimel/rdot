@@ -1,4 +1,6 @@
 import numpy as np
+from scipy.special import logsumexp
+# from .probability import PRECISION
 from .information import information_rate
 from .distortions import expected_distortion
 from multiprocessing import Pool
@@ -61,25 +63,27 @@ def blahut_arimoto(
     Returns:
         a tuple of (qxhat_x, rate, distortion) values. This is the optimal encoder `qxhat_x`, such that the  `rate` (in bits) of compressing X into X_hat, is minimized for the level of `distortion` between X, X_hat
     """
-    # start with iid conditional distribution
-    # qxhat_x = np.tile(px, (dist_mat.shape[1], 1)).T
-    qxhat_x = np.full((len(px), len(px)),  1/len(px))
-    qxhat = px @ qxhat_x
-    breakpoint() # numerical underflow for gaussian case
+    # Do everything in logspace for stability
+    ln_px = np.log(px)
+    
+    # initial encoder, shape `(x, xhat)`
+    ln_qxhat_x = np.log(np.full(dist_mat.shape,  1/dist_mat.shape[1]))
+
+    # initial q(xhat), shape `(xhat)`
+    ln_qxhat = logsumexp(ln_px[:, None] + ln_qxhat_x)
 
     def update_eqs(
-        qxhat: np.ndarray,
-        qxhat_x: np.ndarray,
+        ln_qxhat: np.ndarray,
+        ln_qxhat_x: np.ndarray,
     ) -> tuple[np.ndarray]:
         """Update the required self-consistent equations."""
         # q(x_hat) = sum p(x) q(x_hat | x)
-        qxhat = px @ qxhat_x
-
+        ln_qxhat = logsumexp(ln_px[:, None] + ln_qxhat_x, axis=1)
         # q(x_hat | x) = q(x_hat) exp(- beta * d(x_hat, x)) / Z(x)
-        qxhat_x = np.exp(-beta * dist_mat) * qxhat
-        qxhat_x /= np.expand_dims(np.sum(qxhat_x, 1), 1)
+        ln_qxhat_x = ln_qxhat[None,: ] - beta*dist_mat
+        ln_qxhat_x = ln_qxhat_x - logsumexp(ln_qxhat_x, axis=1, keepdims=True,)
 
-        return (qxhat, qxhat_x)
+        return ln_qxhat, ln_qxhat_x
 
     it = 0
     distortion = 2 * eps
@@ -89,10 +93,10 @@ def blahut_arimoto(
         distortion_prev = distortion
 
         # Main BA update
-        qxhat, qxhat_x = update_eqs(qxhat, qxhat_x)
+        ln_qxhat, ln_qxhat_x = update_eqs(ln_qxhat, ln_qxhat_x)
 
         # for convergence check
-        distortion = expected_distortion(px, qxhat_x, dist_mat)
+        distortion = expected_distortion(px, np.exp(ln_qxhat_x), dist_mat)
 
         # convergence check
         if ignore_converge:
@@ -100,5 +104,5 @@ def blahut_arimoto(
         else:
             converged = it == max_it or np.abs(distortion - distortion_prev) < eps
 
-    rate = information_rate(px, qxhat_x)
-    return (qxhat_x, rate, distortion)
+    rate = information_rate(px, np.exp(ln_qxhat_x))
+    return (np.exp(ln_qxhat_x), rate, distortion)

@@ -13,7 +13,7 @@ def ba_iterate(
     num_processes: int = 1,
     **kwargs,
 ) -> list[tuple[float]]:
-    """Iterate the BA algorithm for an array of values of beta. By default, implement reverse deterministic annealing, and implement multiprocessing otherwise."""
+    """Iterate the BA algorithm for an array of values of beta."""
 
     # Unlike the I.B. objective, there are guaranteed results about the convergence to global minima for the 'vanilla' rate distortion objective, using the BA algorithm. This suggests we should not need to use reverse deterministic annealing, although it is unlikely that that hurts.
     ba = lambda beta: blahut_arimoto(px, dist_mat, beta, **kwargs)    

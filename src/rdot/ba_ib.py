@@ -1,50 +1,82 @@
 import numpy as np
+from scipy.special import logsumexp, softmax
 from .probability import PRECISION
-from .information import information_rate, DKL
-from .distortions import ib_kl, expected_distortion
-from multiprocessing import Pool
+from .information import information_rate
+from .distortions import expected_distortion, ib_kl
+
+from multiprocessing import Pool, cpu_count
 from tqdm import tqdm
 
 def ib_method(
     pxy: np.ndarray,
     betas: np.ndarray,
-    num_processes: int = 1,
+    num_processes: int = cpu_count(),
+    num_restarts: int = 10,
     **kwargs,
 ) -> list[tuple[float]]:
-    """Iterate the BA algorithm for an array of values of beta. By default, implement reverse deterministic annealing, and implement multiprocessing otherwise."""
+    """Iterate the BA algorithm for an array of values of beta. 
+    
+    By default, implement reverse deterministic annealing, and implement multiprocessing otherwise.
+    
+    Args:
+        pxy: 2D ndarray, the joint distribution p(x,y)
 
-    ba = lambda beta: blahut_arimoto_ib(pxy, beta, **kwargs)
+        betas: 1D array, values of beta to search
 
-    if num_processes > 1:
-        with Pool(num_processes) as p:
-            async_results = [
-                p.apply_async(
-                    ba,
-                    args=[beta],
-                )
-                for beta in betas
-            ]
-            p.close()
-            p.join()
-        results = [async_result.get() for async_result in async_results]
+        num_processes: number of CPU cores to pass to multiprocessing.Pool to compute different solutions in parallel for each beta. Each beta solution is still computed serially.
 
-    else:
-        results = reversed([ba(beta) for beta in tqdm(reversed(betas))])
+        num_restarts: number of initial conditions to try, since we only have convergence to local optima guaranteed.
+    """
+    # Reverse deterministic annealing
+    results = []    
+    betas = list(reversed(betas)) # assumes beta was passed low to high
+    # for beta in tqdm(betas):
+    #     with Pool(num_processes) as p:
+    #         async_results = [
+    #             p.apply_async(
+    #                 blahut_arimoto_ib,
+    #                 args=[pxy, beta],
+    #                 kwds=kwargs,
+    #             )
+    #             for _ in range(num_restarts)
+    #         ]
+    #     candidates = [x.get() for x in async_results]
+    #     best = min(candidates, key=lambda x: x[1] + beta * x[2])
+    #     results.append(best)
+
+    init_q = np.eye(len(pxy))
+    for beta in tqdm(betas):
+        candidates = []
+        for _ in range(num_restarts):
+            cand = blahut_arimoto_ib(pxy, beta, init_q=init_q, **kwargs)
+            init_q = cand[0]
+            candidates.append(cand)
+        best = min(candidates, key=lambda x: x[1] + beta * x[2])
+        results.append(best)
 
     return results
+
+
+def random_stochastic_matrix(shape: tuple[int], alpha = 1.) -> np.ndarray:
+    """Initialize a stochastic matrix (2D tensor) that sums to 1. along the rows."""
+    energies = alpha * np.random.normal(size=shape)
+    return softmax(energies, axis=1)
 
 
 def blahut_arimoto_ib(
     pxy: np.ndarray,
     beta: float,
+    init_q: np.ndarray = None,
     max_it: int = 200,
     eps: float = 1e-5,
     ignore_converge: bool = False,
 ) -> tuple[float]:
-    """Solve the IB objective.
+    """Compute the rate-distortion function of an i.i.d distribution p(x)
 
     Args:
-        pxy: 2D array of shape `(|X|, |Y|)` representing the joint probability mass function of the source variable and relevance variable.
+        px: (1D array of shape `|X|`) representing the probability mass function of the source.
+
+        dist_mat: array of shape `(|X|, |X_hat|)` representing the distortion matrix between the input alphabet and the reconstruction alphabet.
 
         beta: (scalar) the slope of the rate-distoriton function at the point where evaluation is required
 
@@ -57,44 +89,55 @@ def blahut_arimoto_ib(
     Returns:
         a tuple of (qxhat_x, rate, distortion) values. This is the optimal encoder `qxhat_x`, such that the  `rate` (in bits) of compressing X into X_hat, is minimized for the level of `distortion` between X, X_hat
     """
+    # Do everything in logspace for stability
+    ln_pxy = np.log(pxy + PRECISION)
 
-    px = pxy.sum(axis=1)
-    py_x = pxy / pxy.sum(axis=1, keepdims=True)
+    ln_px = logsumexp(ln_pxy, axis=1) # `(x)`
+    ln_py_x = ln_pxy - logsumexp(ln_pxy, axis=1, keepdims=True)  # `(x, y)`
+    
+    # initial encoder, shape `(x, xhat)`
+    if init_q is not None:
+        ln_qxhat_x = np.log(init_q)
+    else:
+        ln_qxhat_x = np.log(random_stochastic_matrix((len(ln_px), len(ln_px))))
 
-    # start with iid conditional distribution
-    qxhat_x = np.tile(px, (len(px), 1)).T
-    qxhat = px @ qxhat_x
+    # initial q(xhat), shape `(xhat)`
+    ln_qxhat = logsumexp(ln_px[:, None] + ln_qxhat_x)
 
     def update_eqs(
-        qxhat: np.ndarray,
-        qxhat_x: np.ndarray,
+        ln_qxhat: np.ndarray,
+        ln_qxhat_x: np.ndarray,
     ) -> tuple[np.ndarray]:
         """Update the required self-consistent equations."""
-        # q(xhat) = sum_x p(x) q(xhat | x)
-        qxhat = px @ qxhat_x
+        # q(xhat) = sum_x p(x) q(xhat | x), 
+        # shape `[xhat]`
+        ln_qxhat = logsumexp(ln_px[:, None] + ln_qxhat_x, axis=0)
 
-        # q(x,xhat) = p(x) q(xhat|x)
-        qxxhat = px * qxhat_x
-        # p(x|x_hat)
-        qx_xhat = qxxhat.T / qxhat
-        # q(y|xhat) = sum_x p(y|x) q(x | xhat)
-        qy_xhat = qx_xhat @ py_x
-        dist_mat = ib_kl(py_x, qy_xhat)
+        # q(x,xhat) = p(x) q(xhat|x), 
+        # shape `[x, xhat]`
+        ln_qxxhat = ln_px[:, None] + ln_qxhat_x
 
-        # p(xhat | x) = p(xhat) exp(- beta * d(xhat, x)) / Z(x)
-        breakpoint()
-        exp_term = np.exp(-beta * dist_mat)
-        qxhat_x = np.where(
-            exp_term > PRECISION, exp_term * qxhat, 1/len(qxhat) * qxhat
+        # p(x|xhat) = q(x, xhat) / q(xhat),
+        # shape `[xhat, x]`
+        ln_qx_xhat = ln_qxxhat.T - ln_qxhat[:, None]
+
+        # p(y|xhat) = sum_x p(y|x) p(x|xhat),
+        # shape `(xhat, y)`
+        ln_qy_xhat = logsumexp(
+            ln_py_x[None, :, :] + ln_qx_xhat[:, :, None], # `(xhat, x, y)`
+            axis=1,
         )
-        qxhat_x /= np.expand_dims(np.sum(qxhat_x, 1), 1)
 
-        # qxhat_x = np.exp(-beta * dist_mat) * qxhat # this causes underflow
-        # Zx = np.expand_dims(np.sum(qxhat_x, 1), 1)
-        # qxhat_x = np.where(Zx > PRECISION, qxhat_x / Zx, 1 / qxhat_x.shape[1])
-        # qxhat_x /= np.expand_dims(np.sum(qxhat_x, 1), 1)
+        # d(x, xhat) = E[D[ p(y|x) | q(y|xhat) ]],
+        # shape `(x, xhat)`
+        dist_mat = ib_kl(np.exp(ln_py_x), np.exp(ln_qy_xhat))
 
-        return qxhat, qxhat_x, qy_xhat
+        # p(xhat | x) = p(xhat) exp(- beta * d(xhat, x)) / Z(x),
+        # shape `(x, xhat)`
+        ln_qxhat_x = ln_qxhat[None,: ] - beta*dist_mat
+        ln_qxhat_x = ln_qxhat_x - logsumexp(ln_qxhat_x, axis=1, keepdims=True,) 
+
+        return ln_qxhat, ln_qxhat_x, ln_qy_xhat
 
     it = 0
     distortion = 2 * eps
@@ -104,10 +147,14 @@ def blahut_arimoto_ib(
         distortion_prev = distortion
 
         # Main BA update
-        qxhat, qxhat_x, qy_xhat = update_eqs(qxhat, qxhat_x)
+        ln_qxhat, ln_qxhat_x, ln_qy_xhat = update_eqs(ln_qxhat, ln_qxhat_x)
 
         # for convergence check
-        distortion = expected_distortion(px, qxhat_x, ib_kl(py_x, qy_xhat))
+        distortion = expected_distortion(
+            np.exp(ln_px),
+            np.exp(ln_qxhat_x),
+            ib_kl(np.exp(ln_py_x), np.exp(ln_qy_xhat)),
+        )
 
         # convergence check
         if ignore_converge:
@@ -115,5 +162,7 @@ def blahut_arimoto_ib(
         else:
             converged = it == max_it or np.abs(distortion - distortion_prev) < eps
 
-    rate = information_rate(px, qxhat_x)
-    return qxhat_x, rate, distortion
+    qxhat_x = np.exp(ln_qxhat_x)
+    rate = information_rate(np.exp(ln_px), qxhat_x)
+    accuracy = information_rate(np.exp(ln_qxhat), np.exp(ln_qy_xhat))
+    return (qxhat_x, rate, distortion, accuracy)

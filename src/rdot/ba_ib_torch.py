@@ -15,7 +15,7 @@ def ib_method(
     pxy: np.ndarray,
     betas: np.ndarray,
     num_processes: int = cpu_count(),
-    num_restarts: int = 1,
+    num_restarts: int = 5,
     **kwargs,
 ) -> list[tuple[float]]:
     """Iterate the BA algorithm for an array of values of beta. 
