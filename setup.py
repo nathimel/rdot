@@ -10,8 +10,6 @@ requirements = [
 ]
 
 test_requirements = [
-    "black",
-    "coverage",
     "pytest",
 ]
 
@@ -27,7 +25,7 @@ setuptools.setup(
     project_urls={"Bug Tracker": "https://github.com/nathimel/rdot/issues"},
     classifiers=[
         "Programming Language :: Python :: 3",
-        "License :: OSI Approved :: MIT License",
+        "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
     ],
     package_dir={"": "src"},
     packages=setuptools.find_packages(where="src"),
