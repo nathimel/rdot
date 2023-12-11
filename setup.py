@@ -5,6 +5,8 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 requirements = [
     "numpy",
+    "scipy",
+    "tqdm",
 ]
 
 test_requirements = [
