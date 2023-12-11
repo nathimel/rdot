@@ -95,7 +95,7 @@ def blahut_arimoto_ib(
     ln_px = logsumexp(ln_pxy, axis=1) # `(x)`
     ln_py_x = ln_pxy - logsumexp(ln_pxy, axis=1, keepdims=True)  # `(x, y)`
     
-    # initial encoder, shape `(x, xhat)`
+    # initial encoder, shape `(x, xhat)`; we assume x, xhat are same size
     if init_q is not None:
         ln_qxhat_x = np.log(init_q)
     else:
@@ -110,15 +110,15 @@ def blahut_arimoto_ib(
     ) -> tuple[np.ndarray]:
         """Update the required self-consistent equations."""
         # q(xhat) = sum_x p(x) q(xhat | x), 
-        # shape `[xhat]`
+        # shape `(xhat)`
         ln_qxhat = logsumexp(ln_px[:, None] + ln_qxhat_x, axis=0)
 
         # q(x,xhat) = p(x) q(xhat|x), 
-        # shape `[x, xhat]`
+        # shape `(x, xhat)`
         ln_qxxhat = ln_px[:, None] + ln_qxhat_x
 
         # p(x|xhat) = q(x, xhat) / q(xhat),
-        # shape `[xhat, x]`
+        # shape `(xhat, x)`
         ln_qx_xhat = ln_qxxhat.T - ln_qxhat[:, None]
 
         # p(y|xhat) = sum_x p(y|x) p(x|xhat),

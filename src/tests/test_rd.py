@@ -241,6 +241,30 @@ class TestIB:
         # deterministic
         assert len(np.argwhere(encoder)) == len(px)
 
+
+    def test_ba_binary_dist_beta_0(self):
+        # As noga suggested
+        py_x = np.array(
+            [[0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1], 
+            [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]]
+        ).T
+        py_x /= py_x.sum(axis=1)[:, None]
+        # get joint by multiplying by p(x)
+        px = np.full(py_x.shape[0], 1/py_x.shape[0])
+        pxy = py_x * px[:, None]
+
+        # Test many values of beta to sweep out a curve. 
+        betas = np.logspace(-2, 5, num=100)
+
+        rd_values = [
+            result[-3:] for result in ba_ib.ib_method(
+                pxy, 
+                betas,
+                num_restarts=1,
+            )
+        ]
+
+
     def test_curve(self):
 
         # Now we test when |Y| = |X|, e.g. |X| = 10, |Y| = 10

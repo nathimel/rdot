@@ -35,11 +35,11 @@ def information_rate(pA: np.ndarray, pB_A: np.ndarray) -> float:
     Args: 
         pA: array of shape `|A|` the prior probability of an input symbol (i.e., the source)    
 
-        qxhat_x: array of shape `(|A|, |B|)` the probability of an output symbol given the input        
+        pB_A: array of shape `(|A|, |B|)` the probability of an output symbol given the input        
     """
     pXY = joint(pY_X=pB_A, pX=pA)
     mi = MI(pXY=pXY)
     if mi < 0. and not np.isclose(mi, 0.):
-        breakpoint()
+        # breakpoint()
         raise Exception
     return mi
