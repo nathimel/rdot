@@ -6,13 +6,13 @@ from .probability import PRECISION, joint
 ##############################################################################
 
 def xlogx(p):
-    """Compute $x \\log p(x)$"""
+    """Compute $x \log p(x)$"""
     with np.errstate(divide="ignore", invalid="ignore"):
         return np.where(p > PRECISION, p * np.log2(p), 0)
 
 
 def H(p, axis=None):
-    """Compute the entropy of p, $H(X) = - \sum_x x \\log p(x)$"""
+    """Compute the entropy of p, $H(X) = - \sum_x x \log p(x)$"""
     return -xlogx(p).sum(axis=axis)
 
 

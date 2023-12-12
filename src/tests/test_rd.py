@@ -2,6 +2,7 @@ import numpy as np
 from rdot import (
     ba_basic,
     ba_ib,
+    ba_ibmse,
     information,
     distortions
 )
@@ -253,7 +254,7 @@ class TestIB:
         betas = np.logspace(-2, 5, num=50)
 
         rd_values = [
-            result[-2:] for result in ba_ib.ib_method(
+            result[-2:] for result in ba_ib.ba_iterate_ib_rda(
                 pxy, 
                 betas,
                 num_restarts=10,
@@ -344,7 +345,7 @@ class TestIB:
         betas = np.logspace(-5, 0., num=30) # 0. can be changed to -1 if nec.
 
         rates = [
-            result[1] for result in ba_ib.ib_method(
+            result[1] for result in ba_ib.ba_iterate_ib_rda(
                 pxy, 
                 betas,
                 num_restarts=10,
@@ -352,3 +353,166 @@ class TestIB:
         ]
 
         assert np.allclose(rates, 0.)
+
+    def test_ba_binary_dist_deterministic(self):
+
+        # Should be a trivial bound, since I[X:Xhat] = I[Xhat:Y]
+
+        # Medin and Schaffer deterministic category labels
+        py_x = np.array(
+            [
+                [0., 1.],
+                [0., 1.],
+                [0., 1.],
+                [0., 1.],
+                [0., 1.],
+                [1., 0.],
+                [1., 0.],
+                [1., 0.],
+                [1., 0.],
+            ]
+        )
+        py_x /= py_x.sum(axis=1)[:, None]
+        # get joint by multiplying by p(x)
+        px = np.full(py_x.shape[0], 1/py_x.shape[0])
+        pxy = py_x * px[:, None]
+
+        betas = np.logspace(-2, 5, num=30)
+
+        results = [
+            result[-3:] for result in ba_ib.ba_iterate_ib_rda(
+                pxy, 
+                betas,
+                num_restarts=1,
+            )
+        ]
+
+
+class TestIBMSE:
+
+
+    def test_recover_ib(self):
+
+        # Medin and Schaffer deterministic category labels
+        py_x = np.array(
+            [
+                [0., 1.],
+                [0., 1.],
+                [0., 1.],
+                [0., 1.],
+                [0., 1.],
+                [1., 0.],
+                [1., 0.],
+                [1., 0.],
+                [1., 0.],
+            ]
+        )
+        py_x /= py_x.sum(axis=1)[:, None]
+        # get joint by multiplying by p(x)
+        px = np.full(py_x.shape[0], 1/py_x.shape[0])
+        pxy = py_x * px[:, None]
+
+        fx = np.array(
+            [
+                # A
+                [0.,0.,0.,1.],
+                [0.,1.,0.,1.],
+                [0.,1.,0.,0.],
+                [0.,0.,1.,0.],
+                [1.,0.,0.,0.],
+                # B
+                [0.,0.,1.,1.],
+                [1.,0.,0.,1.],
+                [1.,1.,1.,0.],
+                [1.,1.,1.,1.],
+            ]
+        )
+
+        betas = np.logspace(-2, 5, num=30)
+
+        results_ib = ba_ib.ba_iterate_ib_rda(
+            pxy, 
+            betas,
+            num_restarts=1,
+        )
+
+        alphas = np.array([1.]) # 0 <= alpha <= 1
+        weights = np.ones(fx.shape[1]) # 4, just testing kwargs works
+
+        results_ibmse = ba_ibmse.ba_iterate_ib_mse_rda(
+            pxy, 
+            fx,
+            betas,
+            alphas,
+            num_restarts=1,
+            weights=weights,
+        )
+
+        for i, result_ib in enumerate(results_ib):
+            result_ibmse = results_ibmse[i]
+
+            # encoder
+            assert np.allclose(result_ib[0], result_ibmse[0])
+
+            # rate, 
+            assert np.isclose(result_ib[-3], result_ibmse[-3])
+
+            # distortion, 
+            assert np.isclose(result_ib[-2], result_ibmse[-2])
+
+            # accuracy
+            assert np.isclose(result_ib[-1], result_ibmse[-1])
+
+    def test_ba_binary_dist_deterministic(self):
+
+        # Should be a trivial bound, since I[X:Xhat] = I[Xhat:Y]
+
+        # Medin and Schaffer deterministic category labels
+        py_x = np.array(
+            [
+                [0., 1.],
+                [0., 1.],
+                [0., 1.],
+                [0., 1.],
+                [0., 1.],
+                [1., 0.],
+                [1., 0.],
+                [1., 0.],
+                [1., 0.],
+            ]
+        )
+        py_x /= py_x.sum(axis=1)[:, None]
+        # get joint by multiplying by p(x)
+        px = np.full(py_x.shape[0], 1/py_x.shape[0])
+        pxy = py_x * px[:, None]
+
+        fx = np.array(
+            [
+                # A
+                [0.,0.,0.,1.],
+                [0.,1.,0.,1.],
+                [0.,1.,0.,0.],
+                [0.,0.,1.,0.],
+                [1.,0.,0.,0.],
+                # B
+                [0.,0.,1.,1.],
+                [1.,0.,0.,1.],
+                [1.,1.,1.,0.],
+                [1.,1.,1.,1.],
+            ]
+        )
+
+        betas = np.logspace(-2, 5, num=30)
+        alphas = np.logspace(-2, 0., num=30) # 0 <= alpha <= 1
+
+        weights = np.ones(fx.shape[1]) # 4, just testing kwargs works
+
+        ba_ibmse.ba_iterate_ib_mse_rda(
+            pxy, 
+            fx,
+            betas,
+            alphas,
+            num_restarts=1,
+            weights=weights,
+        )
+

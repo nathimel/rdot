@@ -1,3 +1,5 @@
+"""Vanilla Rate distortion theory optimization tools."""
+
 import numpy as np
 from scipy.special import logsumexp
 from .information import information_rate

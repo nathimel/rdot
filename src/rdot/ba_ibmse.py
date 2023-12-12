@@ -1,28 +1,36 @@
-"""Vanilla Information Bottleneck optimization tools."""
+"""Information Bottleneck plus auxilliary vector distortion optimization tools."""
 
 import numpy as np
 from scipy.special import logsumexp
 
 from .probability import PRECISION, random_stochastic_matrix
 from .information import information_rate
-from .distortions import expected_distortion, ib_kl
+from .distortions import expected_distortion, ib_mse
+from .ba_ib import random_stochastic_matrix
 
 from tqdm import tqdm
 
-def ba_iterate_ib_rda(
+
+def ba_iterate_ib_mse_rda(
     pxy: np.ndarray,
+    fx: np.ndarray,
     betas: np.ndarray,
+    alphas: np.ndarray,
     num_restarts: int = 1,
     **kwargs,
 ) -> list[tuple[float]]:
-    """Iterate the BA algorithm for an array of values of beta. 
+    """Iterate the BA algorithm for an array of values of beta and alpha. 
     
     By default, implement reverse deterministic annealing, and implement multiprocessing otherwise.
     
     Args:
         pxy: 2D ndarray, the joint distribution p(x,y)
 
+        fx: 2D array of shape `(|X|, |f(X)|)` representing the unique vector representations of each value of the source variable X.
+
         betas: 1D array, values of beta to search
+
+        alphas: 1D array, values of beta to search
 
         num_restarts: number of initial conditions to try, since we only have convergence to local optima guaranteed.
     """
@@ -32,33 +40,47 @@ def ba_iterate_ib_rda(
 
     init_q = np.eye(len(pxy))
     for beta in tqdm(betas):
-        candidates = []
-        for _ in range(num_restarts):
-            cand = blahut_arimoto_ib(pxy, beta, init_q=init_q, **kwargs)
-            init_q = cand[0]
-            candidates.append(cand)
-        best = min(candidates, key=lambda x: x[1] + beta * x[2])
-        results.append(best)
+        for alpha in alphas:
+            result = blahut_arimoto_ib_mse(
+                pxy, fx, beta, alpha, init_q=init_q, **kwargs
+            )
+            init_q = result[0]
+            results.append(result)
 
     return results
 
 
-def blahut_arimoto_ib(
+def blahut_arimoto_ib_mse(
     pxy: np.ndarray,
+    fx: np.ndarray,
     beta: float,
+    alpha: float,
+    weights: np.ndarray = None,
     init_q: np.ndarray = None,
     max_it: int = 200,
     eps: float = 1e-5,
     ignore_converge: bool = False,
 ) -> tuple[float]:
-    """Estimate the optimal encoder for a given value of `beta` for the Information Bottleneck objective [Tishby et al., 1999].
+    """Estimate the optimal encoder for given values of `beta` and `alpha` for the following modified IB objective:
+
+        $\min_{q, f} \frac{1}{\beta} I[X:\hat{X}] + \alpha \mathbb{E}[D_{KL}[p(y|x) || p(y|\hat{x})]] + (1 - \alpha) \mathbb{E}[l(x, \hat{x})],
+
+    where $l$ is a weighted quadratic loss between feature vectors for $x, \hat{x}$:
+
+        $l(x, \hat{x}) = \frac{1}{N} \sum_{i=1}^{N} w_i \cdot \left( f(x)_i - f(\hat{x})_i \right)^2$,
+
+    and $f(x)$ is the feature vector of $x$, and the optimal $f(\hat{x})$ satisfies:
+
+        $f(\hat{x}) = \sum_x q(x|\hat{x}) f(x)$
 
     Args:
         pxy: 2D array of shape `(|X|, |Y|)` representing the joint probability mass function of the source and relevance variables.
 
+        fx: 2D array of shape `(|X|, |f|)` representing the unique vector representations of each value of the source variable X. Here `|f|` denotes the number of features in each vector x.
+
         beta: (scalar) the slope of the rate-distoriton function at the point where evaluation is required
 
-        init_q: the initial encoder `qxhat_x` to begin the optimization; if using RDA, this is the output of the previous optimization. `None` by default, and the initial encoder will be created by random energy-based initialization.
+        alpha: (scalar) a float between 0 and 1, specifying the trade-off between KL divergence and domain specific (MSE) distortion between feature vectors.
 
         max_it: max number of iterations
 
@@ -70,7 +92,8 @@ def blahut_arimoto_ib(
         a tuple of `(qxhat_x, rate, distortion, accuracy)` values. This is the optimal encoder `qxhat_x`, such that the  `rate` (in bits) of compressing X into X_hat, is minimized for the level of `distortion` between X, X_hat
     """
     # Do everything in logspace for stability
-    ln_pxy = np.log(pxy + PRECISION)
+    ln_pxy = np.log(pxy + PRECISION) # `(x,y)`
+    ln_fx = np.log(fx + PRECISION) # `(x,f)`
 
     ln_px = logsumexp(ln_pxy, axis=1) # `(x)`
     ln_py_x = ln_pxy - logsumexp(ln_pxy, axis=1, keepdims=True)  # `(x, y)`
@@ -108,16 +131,31 @@ def blahut_arimoto_ib(
             axis=1,
         )
 
-        # d(x, xhat) = E[D[ p(y|x) | q(y|xhat) ]],
+        # f(xhat) = sum_x q(x|xhat) f(x)
+        # shape `(xhat, 1)`
+        ln_fxhat = logsumexp(
+            ln_qx_xhat[:, :,None] + ln_fx[None,:,:], # `(xhat, x, f)`
+            axis=1,
+        )
+
+        # d(x, xhat) = alpha * E[D[p(y|x)|q(y|xhat)]] + (1-alpha)*E[l(x,xhat)]
         # shape `(x, xhat)`
-        dist_mat = ib_kl(np.exp(ln_py_x), np.exp(ln_qy_xhat))
+        # dist_mat = ib_kl(np.exp(ln_py_x), np.exp(ln_qy_xhat))
+        dist_mat = ib_mse(
+            py_x=np.exp(ln_py_x),
+            qy_xhat=np.exp(ln_qy_xhat),
+            fx=fx,
+            fxhat=np.exp(ln_fxhat),
+            alpha=alpha,
+            weights=weights,
+        )
 
         # p(xhat | x) = p(xhat) exp(- beta * d(xhat, x)) / Z(x),
         # shape `(x, xhat)`
         ln_qxhat_x = ln_qxhat[None,: ] - beta*dist_mat
         ln_qxhat_x = ln_qxhat_x - logsumexp(ln_qxhat_x, axis=1, keepdims=True,) 
 
-        return ln_qxhat, ln_qxhat_x, ln_qy_xhat
+        return (ln_qxhat, ln_qxhat_x, ln_qy_xhat, ln_fxhat, dist_mat)
 
     it = 0
     distortion = 2 * eps
@@ -127,13 +165,13 @@ def blahut_arimoto_ib(
         distortion_prev = distortion
 
         # Main BA update
-        ln_qxhat, ln_qxhat_x, ln_qy_xhat = update_eqs(ln_qxhat, ln_qxhat_x)
+        ln_qxhat, ln_qxhat_x, ln_qy_xhat, ln_fxhat, dist_mat = update_eqs(ln_qxhat, ln_qxhat_x)
 
         # for convergence check
         distortion = expected_distortion(
             np.exp(ln_px),
             np.exp(ln_qxhat_x),
-            ib_kl(np.exp(ln_py_x), np.exp(ln_qy_xhat)),
+            dist_mat,
         )
 
         # convergence check
@@ -144,5 +182,5 @@ def blahut_arimoto_ib(
 
     qxhat_x = np.exp(ln_qxhat_x)
     rate = information_rate(np.exp(ln_px), qxhat_x)
-    accuracy = information_rate(np.exp(ln_qxhat), np.exp(ln_qy_xhat))
-    return (qxhat_x, rate, distortion, accuracy)
+    accuracy = information_rate(np.exp(ln_qxhat), np.exp(ln_qy_xhat)) # maximizing this is no longer equivalent to minimizing distortion
+    return (qxhat_x, np.exp(ln_fxhat), rate, distortion, accuracy)

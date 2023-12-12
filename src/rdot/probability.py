@@ -1,4 +1,5 @@
 import numpy as np
+from scipy.special import softmax
 
 ##############################################################################
 # Helper functions for encoding discrete probability distributions. Code credit belongs to N. Zaslavsky: https://github.com/nogazs/ib-color-naming/blob/master/src/tools.py
@@ -20,7 +21,7 @@ def marginal(pXY, axis=1):
 
 
 def conditional(pXY):
-    """Compute $p(y|x) = \\frac{p(x,y)}{p(x)}$
+    """Compute $p(y|x) = \frac{p(x,y)}{p(x)}$
 
     Args:
         pXY: a numpy array of shape `(|X|, |Y|)`
@@ -60,10 +61,15 @@ def marginalize(pY_X, pX):
 
 
 def bayes(pY_X, pX):
-    """Compute $p(x|y) = \\frac{p(y|x) \cdot p(x)}{p(y)}$
+    """Compute $p(x|y) = \frac{p(y|x) \cdot p(x)}{p(y)}$
     Args:
         pY_X: a numpy array of shape `(|X|, |Y|)`
     """
     pXY = joint(pY_X, pX)
     pY = marginalize(pY_X, pX)
     return np.where(pY > PRECISION, pXY / pY, 1 / pXY.shape[0]).T
+
+def random_stochastic_matrix(shape: tuple[int], alpha = 1.) -> np.ndarray:
+    """Initialize a stochastic matrix (2D array) that sums to 1. along the rows."""
+    energies = alpha * np.random.normal(size=shape)
+    return softmax(energies, axis=1)
