@@ -25,6 +25,9 @@ def ba_iterate_ib_rda(
         betas: 1D array, values of beta to search
 
         num_restarts: number of initial conditions to try, since we only have convergence to local optima guaranteed.
+
+    Returns: 
+        a list of `(qxhat_x, rate, distortion, accuracy, beta)` tuples
     """
     # Reverse deterministic annealing
     results = []    
@@ -67,7 +70,16 @@ def blahut_arimoto_ib(
         ignore_converge: whether to run the optimization until `max_it`, ignoring the stopping criterion specified by `eps`.
 
     Returns:
-        a tuple of `(qxhat_x, rate, distortion, accuracy)` values. This is the optimal encoder `qxhat_x`, such that the  `rate` (in bits) of compressing X into X_hat, is minimized for the level of `distortion` between X, X_hat
+        a tuple of `(qxhat_x, rate, distortion, accuracy, beta)` values. This is:
+            `qxhat_x`, the optimal encoder, such that the
+
+            `rate` (in bits) of compressing X into X_hat, is minimized for the level of 
+            
+            `distortion` between X, X_hat with respect to Y, i.e. the 
+
+            `accuracy` I[X_hat:Y] is maximized, for the specified
+
+            `beta` trade-off parameter
     """
     # Do everything in logspace for stability
     ln_pxy = np.log(pxy + PRECISION)
@@ -145,4 +157,4 @@ def blahut_arimoto_ib(
     qxhat_x = np.exp(ln_qxhat_x)
     rate = information_rate(np.exp(ln_px), qxhat_x)
     accuracy = information_rate(np.exp(ln_qxhat), np.exp(ln_qy_xhat))
-    return (qxhat_x, rate, distortion, accuracy)
+    return (qxhat_x, rate, distortion, accuracy, beta)

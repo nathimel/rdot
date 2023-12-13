@@ -2,6 +2,7 @@
 
 import numpy as np
 from scipy.special import logsumexp
+from typing import Any
 
 from .probability import PRECISION, random_stochastic_matrix
 from .information import information_rate
@@ -18,7 +19,7 @@ def ba_iterate_ib_mse_rda(
     alphas: np.ndarray,
     num_restarts: int = 1,
     **kwargs,
-) -> list[tuple[float]]:
+) -> list[tuple[Any]]:
     """Iterate the BA algorithm for an array of values of beta and alpha. 
     
     By default, implement reverse deterministic annealing, and implement multiprocessing otherwise.
@@ -33,6 +34,9 @@ def ba_iterate_ib_mse_rda(
         alphas: 1D array, values of beta to search
 
         num_restarts: number of initial conditions to try, since we only have convergence to local optima guaranteed.
+    
+    Returns: 
+        a list of `(qxhat_x, fxhat, rate, distortion, accuracy, beta, alpha)` tuples
     """
     # Reverse deterministic annealing
     results = []    
@@ -89,7 +93,20 @@ def blahut_arimoto_ib_mse(
         ignore_converge: whether to run the optimization until `max_it`, ignoring the stopping criterion specified by `eps`.
 
     Returns:
-        a tuple of `(qxhat_x, rate, distortion, accuracy)` values. This is the optimal encoder `qxhat_x`, such that the  `rate` (in bits) of compressing X into X_hat, is minimized for the level of `distortion` between X, X_hat
+        a tuple of `(qxhat_x, fxhat, rate, distortion, accuracy, beta, alpha)` values. This is:
+            `qxhat_x`, the optimal encoder, 
+
+            `fxhat`, corresponding feature vectors such that the 
+
+            `rate` (in bits) of compressing X into X_hat, is minimized for the level of 
+
+            `distortion` between X, X_hat with respect to Y and f(x), and
+
+            `accuracy` I[X_hat:Y] is maximized, for the specified
+
+            `beta` trade-off parameter, and the specified
+
+            `alpha` combination distortion trade-off parameter.
     """
     # Do everything in logspace for stability
     ln_pxy = np.log(pxy + PRECISION) # `(x,y)`
@@ -183,4 +200,4 @@ def blahut_arimoto_ib_mse(
     qxhat_x = np.exp(ln_qxhat_x)
     rate = information_rate(np.exp(ln_px), qxhat_x)
     accuracy = information_rate(np.exp(ln_qxhat), np.exp(ln_qy_xhat)) # maximizing this is no longer equivalent to minimizing distortion
-    return (qxhat_x, np.exp(ln_fxhat), rate, distortion, accuracy)
+    return (qxhat_x, np.exp(ln_fxhat), rate, distortion, accuracy, beta, alpha)

@@ -40,7 +40,16 @@ def blahut_arimoto(
         ignore_converge: whether to run the optimization until `max_it`, ignoring the stopping criterion specified by `eps`.
 
     Returns:
-        a tuple of (qxhat_x, rate, distortion) values. This is the optimal encoder `qxhat_x`, such that the  `rate` (in bits) of compressing X into X_hat, is minimized for the level of `distortion` between X, X_hat
+        a tuple of `(qxhat_x, rate, distortion, accuracy)` values. This is:
+            `qxhat_x`, the optimal encoder, such that the
+
+            `rate` (in bits) of compressing X into X_hat, is minimized for the level of 
+            
+            `distortion` between X, X_hat with respect to Y, i.e. the 
+
+            `accuracy` I[X_hat:Y] is maximized, for the specified
+
+            `beta` trade-off parameter
     """
     # Do everything in logspace for stability
     ln_px = np.log(px)
@@ -84,4 +93,4 @@ def blahut_arimoto(
             converged = it == max_it or np.abs(distortion - distortion_prev) < eps
 
     rate = information_rate(px, np.exp(ln_qxhat_x))
-    return (np.exp(ln_qxhat_x), rate, distortion)
+    return (np.exp(ln_qxhat_x), rate, distortion, beta)

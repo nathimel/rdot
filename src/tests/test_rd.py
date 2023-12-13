@@ -45,7 +45,7 @@ class TestRDBinaryHamming:
         
         # distortion matrix
         dist_mat = distortions.hamming(x, xhat)
-        encoder, rate, dist = ba_basic.blahut_arimoto(
+        encoder, rate, dist, _ = ba_basic.blahut_arimoto(
             px=px,
             dist_mat=dist_mat,            
             beta=0., # evaluation beta
@@ -72,7 +72,7 @@ class TestRDBinaryHamming:
         
         # distortion matrix
         dist_mat = distortions.hamming(x, xhat)
-        encoder, rate, dist = ba_basic.blahut_arimoto(
+        encoder, rate, dist, _ = ba_basic.blahut_arimoto(
             px=px,
             dist_mat=dist_mat,            
             beta=1e10, # evaluation beta
@@ -109,9 +109,9 @@ class TestRDBinaryHamming:
         ind3 = 40
         
         # R, D points
-        _, x1, y1 = rd_values[ind1]
-        _, x2, y2 = rd_values[ind2]
-        _, x3, y3 = rd_values[ind3]
+        _, x1, y1, _ = rd_values[ind1]
+        _, x2, y2, _ = rd_values[ind2]
+        _, x3, y3, _ = rd_values[ind3]
 
         assert x1 < x2
         assert x2 < x3
@@ -135,7 +135,7 @@ class TestRDGaussianQuadratic:
 
         dist_mat = distortions.quadratic(x, xhat)
 
-        encoder, rate, dist = ba_basic.blahut_arimoto(
+        encoder, rate, dist, _ = ba_basic.blahut_arimoto(
             px=px,
             dist_mat=dist_mat,
             beta=0., # evaluation beta
@@ -158,7 +158,7 @@ class TestRDGaussianQuadratic:
 
         dist_mat = distortions.quadratic(x, xhat)
 
-        encoder, rate, dist = ba_basic.blahut_arimoto(
+        encoder, rate, dist, _ = ba_basic.blahut_arimoto(
             px=px,
             dist_mat=dist_mat,            
             beta=1e10, # evaluation beta
@@ -182,7 +182,7 @@ class TestRDGaussianQuadratic:
         # Test many values of beta to sweep out a curve. 
         betas = np.logspace(-5, 5, num=100)
 
-        rd_values = [result[-2:] for result in ba_basic.ba_iterate(px, dist_mat, betas)]
+        rd_values = [result[-3:-1] for result in ba_basic.ba_iterate(px, dist_mat, betas)]
 
         # Check for convexity
         ind1 = 20
@@ -212,7 +212,7 @@ class TestIB:
         px = np.full(py_x.shape[0], 1/10)
         pxy = py_x * px
 
-        encoder, rate, _, _ = ba_ib.blahut_arimoto_ib(
+        encoder, rate, _, _, _= ba_ib.blahut_arimoto_ib(
             pxy=pxy,
             beta=0., # evaluation beta
             init_q=np.full((len(px), len(px)), 1/len(px)),
@@ -232,7 +232,7 @@ class TestIB:
         px = np.full(py_x.shape[0], 1/10)
         pxy = py_x * px
         
-        encoder, rate, dist, _ = ba_ib.blahut_arimoto_ib(
+        encoder, rate, dist, _, _ = ba_ib.blahut_arimoto_ib(
             pxy=pxy,
             beta=1e10, # evaluation beta
             init_q=np.eye(len(px)),
@@ -254,7 +254,7 @@ class TestIB:
         betas = np.logspace(-2, 5, num=50)
 
         rd_values = [
-            result[-2:] for result in ba_ib.ba_iterate_ib_rda(
+            result[-3:-1] for result in ba_ib.ba_iterate_ib_rda(
                 pxy, 
                 betas,
                 num_restarts=10,
@@ -289,7 +289,7 @@ class TestIB:
         px = np.full(py_x.shape[0], 1/100)
         pxy = py_x * px[:, None]
         
-        encoder, rate, dist, _ = ba_ib.blahut_arimoto_ib(
+        encoder, rate, dist, _, _ = ba_ib.blahut_arimoto_ib(
             pxy=pxy,
             beta=1e10, # evaluation beta,
             max_it=10,
@@ -307,7 +307,7 @@ class TestIB:
         px = np.full(py_x.shape[0], 1/py_x.shape[0])
         pxy = py_x * px[:, None]
 
-        encoder, rate, dist, _ = ba_ib.blahut_arimoto_ib(
+        encoder, rate, dist, _, _ = ba_ib.blahut_arimoto_ib(
             pxy=pxy,
             beta=0., # evaluation beta,
         )
@@ -323,7 +323,7 @@ class TestIB:
         px = np.full(py_x.shape[0], 1/py_x.shape[0])
         pxy = py_x * px[:, None]
 
-        encoder, rate, dist, _ = ba_ib.blahut_arimoto_ib(
+        encoder, rate, dist, _, _ = ba_ib.blahut_arimoto_ib(
             pxy=pxy,
             beta=1e10, # evaluation beta,
         )
@@ -379,13 +379,11 @@ class TestIB:
 
         betas = np.logspace(-2, 5, num=30)
 
-        results = [
-            result[-3:] for result in ba_ib.ba_iterate_ib_rda(
+        ba_ib.ba_iterate_ib_rda(
                 pxy, 
                 betas,
                 num_restarts=1,
-            )
-        ]
+        )
 
 
 class TestIBMSE:
@@ -454,14 +452,21 @@ class TestIBMSE:
             # encoder
             assert np.allclose(result_ib[0], result_ibmse[0])
 
+            # Don't check the feature vectors, since reg ib doesn't have those
+
             # rate, 
-            assert np.isclose(result_ib[-3], result_ibmse[-3])
+            assert np.isclose(result_ib[-4], result_ibmse[-5])
 
             # distortion, 
-            assert np.isclose(result_ib[-2], result_ibmse[-2])
+            assert np.isclose(result_ib[-3], result_ibmse[-4])
 
             # accuracy
-            assert np.isclose(result_ib[-1], result_ibmse[-1])
+            assert np.isclose(result_ib[-2], result_ibmse[-3])
+
+            # beta
+            assert np.isclose(result_ib[-1], result_ibmse[-2])
+
+            # Don't check alpha, since reg ib doesn't have
 
     def test_ba_binary_dist_deterministic(self):
 
