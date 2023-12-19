@@ -8,9 +8,23 @@ from .probability import PRECISION, random_stochastic_matrix
 from .information import information_rate
 from .distortions import expected_distortion, ib_mse
 from .ba_ib import random_stochastic_matrix
+from .postprocessing import compute_lower_bound
+from collections import namedtuple
 
 from tqdm import tqdm
 
+IBMSEesult = namedtuple(
+    'IBResult',
+    [
+        'qxhat_x',
+        'fxhat',
+        'rate',
+        'distortion',
+        'accuracy',
+        'beta',
+        'alpha',
+    ]
+)
 
 def ba_iterate_ib_mse_rda(
     pxy: np.ndarray,
@@ -18,8 +32,9 @@ def ba_iterate_ib_mse_rda(
     betas: np.ndarray,
     alphas: np.ndarray,
     num_restarts: int = 1,
+    ensure_monotonicity: bool = True,
     **kwargs,
-) -> list[tuple[Any]]:
+) -> list[IBMSEesult]:
     """Iterate the BA algorithm for an array of values of beta and alpha. 
     
     By default, implement reverse deterministic annealing, and implement multiprocessing otherwise.
@@ -36,11 +51,11 @@ def ba_iterate_ib_mse_rda(
         num_restarts: number of initial conditions to try, since we only have convergence to local optima guaranteed.
     
     Returns: 
-        a list of `(qxhat_x, fxhat, rate, distortion, accuracy, beta, alpha)` tuples
+        a list of `IBResult` namedtuples, each containing `(qxhat_x, fxhat, rate, distortion, accuracy, beta, alpha)`
     """
     # Reverse deterministic annealing
     results = []    
-    betas = list(reversed(betas)) # assumes beta was passed low to high
+    betas = np.sort(betas)[::-1]
 
     init_q = np.eye(len(pxy))
     for beta in tqdm(betas):
@@ -50,7 +65,12 @@ def ba_iterate_ib_mse_rda(
             )
             init_q = result[0]
             results.append(result)
-
+    
+    # Postprocessing
+    results = results[::-1]
+    if ensure_monotonicity:
+        indices = compute_lower_bound([(item.rate, item.distortion) for item in results])
+        results = [x if i in indices else None for i, x in enumerate(results)]    
     return results
 
 
@@ -200,4 +220,4 @@ def blahut_arimoto_ib_mse(
     qxhat_x = np.exp(ln_qxhat_x)
     rate = information_rate(np.exp(ln_px), qxhat_x)
     accuracy = information_rate(np.exp(ln_qxhat), np.exp(ln_qy_xhat)) # maximizing this is no longer equivalent to minimizing distortion
-    return (qxhat_x, np.exp(ln_fxhat), rate, distortion, accuracy, beta, alpha)
+    return IBMSEesult(qxhat_x, np.exp(ln_fxhat), rate, distortion, accuracy, beta, alpha)

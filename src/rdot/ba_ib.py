@@ -6,15 +6,30 @@ from scipy.special import logsumexp
 from .probability import PRECISION, random_stochastic_matrix
 from .information import information_rate
 from .distortions import expected_distortion, ib_kl
+from .postprocessing import compute_lower_bound
+from collections import namedtuple
 
 from tqdm import tqdm
+
+
+IBResult = namedtuple(
+    'IBResult',
+    [
+        'qxhat_x',
+        'rate',
+        'distortion',
+        'accuracy',
+        'beta',
+    ]
+)
 
 def ba_iterate_ib_rda(
     pxy: np.ndarray,
     betas: np.ndarray,
     num_restarts: int = 1,
+    ensure_monotonicity: bool = True,
     **kwargs,
-) -> list[tuple[float]]:
+) -> list[IBResult]:
     """Iterate the BA algorithm for an array of values of beta. 
     
     By default, implement reverse deterministic annealing, and implement multiprocessing otherwise.
@@ -27,11 +42,11 @@ def ba_iterate_ib_rda(
         num_restarts: number of initial conditions to try, since we only have convergence to local optima guaranteed.
 
     Returns: 
-        a list of `(qxhat_x, rate, distortion, accuracy, beta)` tuples
+        a list of `IBResult` namedtuples, each containing `(qxhat_x, rate, distortion, accuracy, beta)`
     """
     # Reverse deterministic annealing
     results = []    
-    betas = list(reversed(betas)) # assumes beta was passed low to high
+    betas = np.sort(betas)[::-1] # sort betas in decreasing order
 
     init_q = np.eye(len(pxy))
     for beta in tqdm(betas):
@@ -43,6 +58,11 @@ def ba_iterate_ib_rda(
         best = min(candidates, key=lambda x: x[1] + beta * x[2])
         results.append(best)
 
+    # Postprocessing
+    results = results[::-1]
+    if ensure_monotonicity:
+        indices = compute_lower_bound([(item.rate, item.distortion) for item in results])
+        results = [x if i in indices else None for i, x in enumerate(results)]
     return results
 
 
@@ -157,4 +177,4 @@ def blahut_arimoto_ib(
     qxhat_x = np.exp(ln_qxhat_x)
     rate = information_rate(np.exp(ln_px), qxhat_x)
     accuracy = information_rate(np.exp(ln_qxhat), np.exp(ln_qy_xhat))
-    return (qxhat_x, rate, distortion, accuracy, beta)
+    return IBResult(qxhat_x, rate, distortion, accuracy, beta)

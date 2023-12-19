@@ -29,7 +29,7 @@ def ib_kl(py_x: np.ndarray, qy_xhat: np.ndarray) -> np.ndarray:
     # D[p(y|x) || q(y|xhat)]
     return DKL(py_x[:,None,:], qy_xhat[None,:,:], axis=2)
 
-def feature_loss(fx: np.ndarray, fxhat: np.ndarray, weights: np.ndarray = None) -> float:
+def feature_loss(fx: np.ndarray, fxhat: np.ndarray, weights: np.ndarray = None) -> np.ndarray:
     # 1/|f| sum_{i}^{|f|} w_i [ f(x)_i - f(\hat{x})_i ]^2
     if fx.shape != fxhat.shape:
         raise ValueError

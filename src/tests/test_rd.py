@@ -4,7 +4,8 @@ from rdot import (
     ba_ib,
     ba_ibmse,
     information,
-    distortions
+    distortions,
+    postprocessing,
 )
 
 # The following test cases were taken from the following file in Alon Kipnis' repo: https://github.com/alonkipnis/BlahutArimoto/blob/master/example.py
@@ -254,18 +255,19 @@ class TestIB:
         betas = np.logspace(-2, 5, num=50)
 
         rd_values = [
-            result[-3:-1] for result in ba_ib.ba_iterate_ib_rda(
+            (result.rate, result.distortion) for result in ba_ib.ba_iterate_ib_rda(
                 pxy, 
                 betas,
                 num_restarts=10,
             )
+            if result is not None
         ]
 
         # Check for convexity
-        ind1 = 20
-        ind2 = 30
-        ind3 = 40
-        
+        ind1 = 0
+        ind2 = int(len(rd_values)/2)
+        ind3 = len(rd_values) - 1
+
         # R, D points
         x1, y1 = rd_values[ind1]
         x2, y2 = rd_values[ind2]
@@ -345,11 +347,12 @@ class TestIB:
         betas = np.logspace(-5, 0., num=30) # 0. can be changed to -1 if nec.
 
         rates = [
-            result[1] for result in ba_ib.ba_iterate_ib_rda(
+            result.rate for result in ba_ib.ba_iterate_ib_rda(
                 pxy, 
                 betas,
                 num_restarts=10,
             )
+            if result is not None
         ]
 
         assert np.allclose(rates, 0.)
@@ -449,6 +452,16 @@ class TestIBMSE:
         for i, result_ib in enumerate(results_ib):
             result_ibmse = results_ibmse[i]
 
+            # Make sure the same results were filtered out if at all
+            if result_ib is not None and result_ibmse is None:
+                raise Exception
+            
+            elif result_ibmse is not None and result_ib is None:
+                raise Exception
+
+            elif result_ib is None and result_ibmse is None:
+                continue
+
             # encoder
             assert np.allclose(result_ib[0], result_ibmse[0])
 
@@ -521,3 +534,20 @@ class TestIBMSE:
             weights=weights,
         )
 
+class TestPostProcessing:
+
+    def test_compute_lower_bound(self):
+
+        xs = list(range(10))
+        ys = list(range(0, 20, 2))[::-1]
+
+        # Insert nonmon        
+        ys[5] = ys[5] + 3
+
+        inputs = list(zip(xs,ys))
+
+        actual = postprocessing.compute_lower_bound(inputs)
+        expected = list(range(10))
+        expected.pop(5)
+
+        assert expected == actual

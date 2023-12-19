@@ -4,14 +4,36 @@ import numpy as np
 from scipy.special import logsumexp
 from .information import information_rate
 from .distortions import expected_distortion
+from collections import namedtuple
+
+RateDistortionResult = namedtuple(
+    'RateDistortionResult',
+    [
+        'qxhat_x',
+        'rate',
+        'distortion',
+        'beta',
+    ]
+)
 
 def ba_iterate(
     px: np.ndarray,
     dist_mat: np.ndarray,
     betas: np.ndarray,
     **kwargs,
-) -> list[tuple[float]]:
-    """Iterate the BA algorithm for an array of values of beta."""
+) -> list[RateDistortionResult]:
+    """Iterate the BA algorithm for an array of values of beta.
+    
+    Args:
+        px: 1D ndarray, the source distribution p(x)
+
+        dist_mat: 2D array, the distortion matrix between X and Xhat
+
+        betas: 1D array, values of beta to search
+
+    Returns:
+        a list of `RateDistortionResult` namedtuples, each containing `(qxhat_x, rate, distortion, beta)`
+    """
     # Unlike the I.B. objective, there are guaranteed results about the convergence to global minima for the 'vanilla' rate distortion objective, using the BA algorithm. This suggests we should not need to use reverse deterministic annealing, although it is unlikely that that hurts.
     return [blahut_arimoto(px, dist_mat, beta, **kwargs) for beta in betas]
 
@@ -93,4 +115,4 @@ def blahut_arimoto(
             converged = it == max_it or np.abs(distortion - distortion_prev) < eps
 
     rate = information_rate(px, np.exp(ln_qxhat_x))
-    return (np.exp(ln_qxhat_x), rate, distortion, beta)
+    return RateDistortionResult(np.exp(ln_qxhat_x), rate, distortion, beta)
