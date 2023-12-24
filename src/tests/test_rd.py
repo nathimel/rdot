@@ -1,8 +1,6 @@
 import numpy as np
 from rdot import (
-    ba_basic,
-    ba_ib,
-    ba_ibmse,
+    ba,
     information,
     distortions,
     postprocessing,
@@ -43,14 +41,17 @@ class TestRDBinaryHamming:
         xhat = np.array([0,1]) # Binary reconstruction
         p = 0.5 # P(X=1) = p
         px = np.array([1-p, p])
+        beta = 0.
         
         # distortion matrix
         dist_mat = distortions.hamming(x, xhat)
-        encoder, rate, dist, _ = ba_basic.blahut_arimoto(
-            px=px,
-            dist_mat=dist_mat,
-            beta=0., # evaluation beta
+        optimizer = ba.RateDistortionOptimizer(
+            px, dist_mat, np.array([beta]),
         )
+        result, = optimizer.get_results()
+        rate = result.rate
+        dist = result.distortion
+        encoder = result.qxhat_x
 
         # The true R(D) function is bounded by H(p) - H(D); see Cover and Thomas, Rate Distortion Theory, Eq. (10.23).
         true_rate = information.H(p) - information.H(dist)
@@ -69,14 +70,17 @@ class TestRDBinaryHamming:
         xhat = np.array([0,1]) # Binary reconstruction
         p = 0.5 # P(X=1) = p
         px = np.array([1-p, p])
+        beta = 1e10
         
         # distortion matrix
         dist_mat = distortions.hamming(x, xhat)
-        encoder, rate, dist, _ = ba_basic.blahut_arimoto(
-            px=px,
-            dist_mat=dist_mat,            
-            beta=1e10, # evaluation beta
+        optimizer = ba.RateDistortionOptimizer(
+            px, dist_mat, np.array([beta]),
         )
+        result, = optimizer.get_results()
+        rate = result.rate
+        dist = result.distortion
+        encoder = result.qxhat_x
 
         # The true R(D) function is bounded by H(p) - H(D); see Cover and Thomas, Rate Distortion Theory, Eq. (10.23).
         true_rate = information.H(p) - information.H(dist)
@@ -99,9 +103,12 @@ class TestRDBinaryHamming:
         dist_mat = distortions.hamming(x, xhat)
 
         # Test many values of beta to sweep out a curve. 
-        betas = np.logspace(-5, 5, num=100)        
+        betas = np.logspace(-5, 5, num=100)
 
-        rd_values = ba_basic.ba_iterate(px, dist_mat, betas)
+        optimizer = ba.RateDistortionOptimizer(px, dist_mat, betas)
+        results = optimizer.get_results()
+
+        # rd_values = ba_basic.ba_iterate(px, dist_mat, betas)
 
         # Check for convexity
         ind1 = 20
@@ -109,9 +116,9 @@ class TestRDBinaryHamming:
         ind3 = 40
         
         # R, D points
-        _, x1, y1, _ = rd_values[ind1]
-        _, x2, y2, _ = rd_values[ind2]
-        _, x3, y3, _ = rd_values[ind3]
+        x1, y1 = results[ind1].rate, results[ind1].distortion
+        x2, y2 = results[ind2].rate, results[ind2].distortion
+        x3, y3 = results[ind3].rate, results[ind3].distortion
 
         assert x1 < x2
         assert x2 < x3
@@ -134,12 +141,17 @@ class TestRDGaussianQuadratic:
         px /= px.sum() # guess we actually need this
 
         dist_mat = distortions.quadratic(x, xhat)
-
-        encoder, rate, dist, _ = ba_basic.blahut_arimoto(
-            px=px,
-            dist_mat=dist_mat,
-            beta=0., # evaluation beta
+        beta = 0.
+        
+        # distortion matrix
+        dist_mat = distortions.hamming(x, xhat)
+        optimizer = ba.RateDistortionOptimizer(
+            px, dist_mat, np.array([beta]),
         )
+        result, = optimizer.get_results()
+        rate = result.rate
+        dist = result.distortion
+        encoder = result.qxhat_x
 
         true = 2 ** (-2 * rate) # D(R) = σ^2 2^{−2R} in theory, but we truncated
         estimated = dist
@@ -157,12 +169,17 @@ class TestRDGaussianQuadratic:
         px /= px.sum() # guess we actually need this
 
         dist_mat = distortions.quadratic(x, xhat)
-
-        encoder, rate, dist, _ = ba_basic.blahut_arimoto(
-            px=px,
-            dist_mat=dist_mat,            
-            beta=1e10, # evaluation beta
+        beta = 1e10
+        
+        # distortion matrix
+        dist_mat = distortions.hamming(x, xhat)
+        optimizer = ba.RateDistortionOptimizer(
+            px, dist_mat, np.array([beta]),
         )
+        result, = optimizer.get_results()
+        rate = result.rate
+        dist = result.distortion
+        encoder = result.qxhat_x
 
         # deterministic
         assert np.isclose(dist, 0.)
@@ -182,7 +199,10 @@ class TestRDGaussianQuadratic:
         # Test many values of beta to sweep out a curve. 
         betas = np.logspace(-5, 5, num=100)
 
-        rd_values = [result[-3:-1] for result in ba_basic.ba_iterate(px, dist_mat, betas)]
+        optimizer = ba.RateDistortionOptimizer(px, dist_mat, betas)
+        results = optimizer.get_results()
+
+        # rd_values = ba_basic.ba_iterate(px, dist_mat, betas)
 
         # Check for convexity
         ind1 = 20
@@ -190,9 +210,9 @@ class TestRDGaussianQuadratic:
         ind3 = 40
         
         # R, D points
-        x1, y1 = rd_values[ind1]
-        x2, y2 = rd_values[ind2]
-        x3, y3 = rd_values[ind3]
+        x1, y1 = results[ind1].rate, results[ind1].distortion
+        x2, y2 = results[ind2].rate, results[ind2].distortion
+        x3, y3 = results[ind3].rate, results[ind3].distortion
 
         assert x1 < x2
         assert x2 < x3
@@ -212,11 +232,16 @@ class TestIB:
         px = np.full(py_x.shape[0], 1/10)
         pxy = py_x * px
 
-        encoder, rate, _, _, _= ba_ib.blahut_arimoto_ib(
-            pxy=pxy,
-            beta=0., # evaluation beta
-            init_q=np.full((len(px), len(px)), 1/len(px)),
+        beta = 0.
+        
+        # distortion matrix
+        optimizer = ba.IBOptimizer(
+            pxy, betas=np.array([beta]),
         )
+        result, = optimizer.get_results()
+        rate = result.rate
+        dist = result.distortion
+        encoder = result.qxhat_x
 
         # degenerate
         assert np.isclose(rate, 0.)
@@ -232,11 +257,16 @@ class TestIB:
         px = np.full(py_x.shape[0], 1/10)
         pxy = py_x * px
         
-        encoder, rate, dist, _, _ = ba_ib.blahut_arimoto_ib(
-            pxy=pxy,
-            beta=1e10, # evaluation beta
-            init_q=np.eye(len(px)),
+        beta = 1e10
+        
+        # distortion matrix
+        optimizer = ba.IBOptimizer(
+            pxy, betas=np.array([beta]),
         )
+        result, = optimizer.get_results()
+        rate = result.rate
+        dist = result.distortion
+        encoder = result.qxhat_x
 
         # trivial
         assert np.isclose(dist, 0.)
@@ -253,12 +283,9 @@ class TestIB:
         # Test many values of beta to sweep out a curve. 
         betas = np.logspace(-2, 5, num=50)
 
+        optimizer = ba.IBOptimizer(pxy, betas)
         rd_values = [
-            (result.rate, result.distortion) for result in ba_ib.ba_iterate_ib_rda(
-                pxy, 
-                betas,
-                num_restarts=10,
-            )
+            (result.rate, result.distortion) for result in optimizer.get_results()
             if result is not None
         ]
 
@@ -290,11 +317,16 @@ class TestIB:
         px = np.full(py_x.shape[0], 1/100)
         pxy = py_x * px[:, None]
         
-        encoder, rate, dist, _, _ = ba_ib.blahut_arimoto_ib(
-            pxy=pxy,
-            beta=1e10, # evaluation beta,
-            max_it=10,
-        )        
+        beta = 1e10
+        
+        # distortion matrix
+        optimizer = ba.IBOptimizer(
+            pxy, betas=np.array([beta]),
+        )
+        result, = optimizer.get_results()
+        rate = result.rate
+        dist = result.distortion
+        encoder = result.qxhat_x 
 
     def test_ba_binary_dist_beta_0(self):
 
@@ -308,10 +340,16 @@ class TestIB:
         px = np.full(py_x.shape[0], 1/py_x.shape[0])
         pxy = py_x * px[:, None]
 
-        encoder, rate, dist, _, _ = ba_ib.blahut_arimoto_ib(
-            pxy=pxy,
-            beta=0., # evaluation beta,
+        beta = 0.
+        
+        # distortion matrix
+        optimizer = ba.IBOptimizer(
+            pxy, betas=np.array([beta]),
         )
+        result, = optimizer.get_results()
+        rate = result.rate
+        dist = result.distortion
+        encoder = result.qxhat_x
 
     def test_ba_binary_dist_beta_1e10(self):
 
@@ -324,10 +362,16 @@ class TestIB:
         px = np.full(py_x.shape[0], 1/py_x.shape[0])
         pxy = py_x * px[:, None]
 
-        encoder, rate, dist, _, _ = ba_ib.blahut_arimoto_ib(
-            pxy=pxy,
-            beta=1e10, # evaluation beta,
+        beta = 1e10
+        
+        # distortion matrix
+        optimizer = ba.IBOptimizer(
+            pxy, betas=np.array([beta]),
         )
+        result, = optimizer.get_results()
+        rate = result.rate
+        dist = result.distortion
+        encoder = result.qxhat_x
         
 
     def test_ba_binary_dist_beta_low(self):
@@ -345,12 +389,9 @@ class TestIB:
         # Trivial solutions occur for beta < 1
         betas = np.logspace(-5, 0., num=30) # 0. can be changed to -1 if nec.
 
+        optimizer = ba.IBOptimizer(pxy, betas)
         rates = [
-            result.rate for result in ba_ib.ba_iterate_ib_rda(
-                pxy, 
-                betas,
-                num_restarts=10,
-            )
+            result.rate for result in optimizer.get_results()
             if result is not None
         ]
 
@@ -381,11 +422,7 @@ class TestIB:
 
         betas = np.logspace(-2, 5, num=30)
 
-        ba_ib.ba_iterate_ib_rda(
-                pxy, 
-                betas,
-                num_restarts=1,
-        )
+        results = ba.IBOptimizer(pxy, betas).get_results()
 
 
 class TestIBMSE:
@@ -430,23 +467,23 @@ class TestIBMSE:
 
         betas = np.logspace(-2, 5, num=30)
 
-        results_ib = ba_ib.ba_iterate_ib_rda(
+        results_ib = ba.IBOptimizer(
             pxy, 
             betas,
             num_restarts=1,
-        )
+        ).get_results()
 
         alphas = np.array([1.]) # 0 <= alpha <= 1
         weights = np.ones(fx.shape[1]) # 4, just testing kwargs works
 
-        results_ibmse = ba_ibmse.ba_iterate_ib_mse_rda(
+        results_ibmse = ba.IBMSEOptimizer(
             pxy, 
             fx,
             betas,
             alphas,
             num_restarts=1,
             weights=weights,
-        )
+        ).get_results()
 
         for i, result_ib in enumerate(results_ib):
             result_ibmse = results_ibmse[i]
@@ -524,14 +561,14 @@ class TestIBMSE:
 
         weights = np.ones(fx.shape[1]) # 4, just testing kwargs works
 
-        ba_ibmse.ba_iterate_ib_mse_rda(
+        ba.IBMSEOptimizer(
             pxy, 
             fx,
             betas,
             alphas,
             num_restarts=1,
             weights=weights,
-        )
+        ).get_results()
 
 class TestPostProcessing:
 

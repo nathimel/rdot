@@ -69,7 +69,7 @@ def bayes(pY_X, pX):
     pY = marginalize(pY_X, pX)
     return np.where(pY > PRECISION, pXY / pY, 1 / pXY.shape[0]).T
 
-def random_stochastic_matrix(shape: tuple[int], alpha = 1.) -> np.ndarray:
+def random_stochastic_matrix(shape: tuple[int], gamma = 1e-10) -> np.ndarray:
     """Initialize a stochastic matrix (2D array) that sums to 1. along the rows."""
-    energies = alpha * np.random.normal(size=shape)
+    energies = gamma * np.random.normal(size=shape)
     return softmax(energies, axis=1)
