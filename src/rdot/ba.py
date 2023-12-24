@@ -64,12 +64,44 @@ class BaseRDOptimizer:
         raise NotImplementedError
     
     def next_result(self, beta, *args, **kwargs) -> None:
-        """Push the result of the converged BA iteration to the results list."""
+        """Get the result of the converged BA iteration."""
         raise NotImplementedError
     
-    def beta_iterate(self, *args, **kwargs, ) -> None:
-        """Iterate the BA algorithm for an array of values of beta."""
-        raise NotImplementedError
+    def beta_iterate(
+        self, 
+        *args, 
+        num_restarts: int = 1, 
+        ensure_monotonicity: bool = True,        
+        **kwargs, 
+        ) -> None:
+        """Iterate the BA algorithm for an array of values of beta, using reverse deterministic annealing.
+        
+        Args:
+            num_restarts: number of times to restart each beta-optimization 
+
+            ensure_monotonicity: whether to remove points that would make a rate distortion curve non-monotonic
+        """
+        # Reverse deterministic annealing
+        results = []
+        betas = np.sort(self.betas)[::-1] # sort betas in decreasing order
+
+        init_q = np.eye(len(self.ln_px))
+        for beta in tqdm(betas):
+            candidates = []
+            for _ in range(num_restarts):
+                self.blahut_arimoto(beta, *args, init_q=init_q, **kwargs)
+                cand = self.results[-1]
+                init_q = cand.qxhat_x
+                candidates.append(cand)
+            best = min(candidates, key=lambda x: x.rate + beta * x.distortion)
+            results.append(best)
+
+        # Postprocessing
+        results = results[::-1]
+        if ensure_monotonicity:
+            indices = compute_lower_bound([(item.rate, item.distortion) for item in results])
+            results = [x if i in indices else None for i, x in enumerate(results)]
+        self.results = results
     
     ############################################################################
     # Blahut Arimoto iteration
@@ -201,18 +233,6 @@ class RateDistortionOptimizer(BaseRDOptimizer):
             beta,
         )
 
-    def beta_iterate(self, *args, **kwargs) -> None:
-        """Iterate the BA algorithm for values of beta."""
-        # [self.blahut_arimoto(beta) for beta in tqdm(self.betas)]
-        self.betas = np.sort(self.betas)[::-1] # sort betas in decreasing order
-        init_q = np.eye(len(self.ln_px))
-
-        for beta in tqdm(self.betas):
-            self.blahut_arimoto(beta, init_q=init_q)
-            init_q = self.results[-1].qxhat_x
-        
-        self.results = self.results[::-1]
-
     def update_eqs(self, beta, *args, **kwargs,) -> None:
         """Iterate the vanilla RD update equations."""
         self.ln_qxhat = next_ln_qxhat(self.ln_px, self.ln_qxhat_x)
@@ -302,36 +322,6 @@ class IBOptimizer(BaseRDOptimizer):
         self.ln_px = logsumexp(self.ln_pxy, axis=1) # `(x)`
         self.ln_py_x = self.ln_pxy - logsumexp(self.ln_pxy, axis=1, keepdims=True)  # `(x, y)`
         self.results: list[IBResult] = None
-
-    def beta_iterate(
-        self, 
-        *args, 
-        num_restarts: int = 1, 
-        ensure_monotonicity: bool = True, 
-        **kwargs,
-        ) -> None:
-        """Run the BA iteration for many values of beta."""
-        # Reverse deterministic annealing
-        results: list[IBResult] = []
-        betas = np.sort(self.betas)[::-1] # sort betas in decreasing order
-
-        init_q = np.eye(len(self.ln_px))
-        for beta in tqdm(betas):
-            candidates = []
-            for _ in range(num_restarts):
-                self.blahut_arimoto(beta, *args, init_q=init_q, **kwargs)
-                cand = self.results[-1]
-                init_q = cand.qxhat_x
-                candidates.append(cand)
-            best = min(candidates, key=lambda x: x.rate + beta * x.distortion)
-            results.append(best)
-
-        # Postprocessing
-        results = results[::-1]
-        if ensure_monotonicity:
-            indices = compute_lower_bound([(item.rate, item.distortion) for item in results])
-            results = [x if i in indices else None for i, x in enumerate(results)]
-        self.results = results
     
     def next_dist_mat(self, *args, **kwargs,) -> None:
         """Vanilla IB distortion matrix."""
@@ -435,30 +425,19 @@ class IBMSEOptimizer(IBOptimizer):
         ) -> None:
         """Run the BA iteration for many values of beta and alpha."""
         # Reverse deterministic annealing
-        betas = np.sort(self.betas)[::-1] # sort betas in decreasing order
-        init_q = np.eye(len(self.ln_px))
         alpha_results: list[IBMSEResult] = []
 
         for alpha in self.alphas:
-            beta_results: list[IBMSEResult] = []
-            for beta in tqdm(betas):
-                candidates = []
-                for _ in range(num_restarts):
-                    kwargs["alpha"] = alpha
-                    self.blahut_arimoto(beta, *args, init_q=init_q, **kwargs)
-                    cand = self.results[-1]
-                    init_q = cand.qxhat_x
-                    candidates.append(cand)
-                best = min(
-                    candidates, key=lambda x: x.rate + beta * x.distortion
-                ) # this still applies in the IB+MSE case
-                beta_results.append(best)
-
-            # Postprocessing
-            beta_results = beta_results[::-1]
-            if ensure_monotonicity:
-                indices = compute_lower_bound([(item.rate, item.distortion) for item in beta_results])
-                alpha_results = [x if i in indices else None for i, x in enumerate(beta_results)]
+            # Run beta_iterate for a single alpha
+            kwargs["alpha"] = alpha
+            super().beta_iterate(
+                *args, 
+                num_restarts=num_restarts, ensure_monotonicity=ensure_monotonicity, 
+                **kwargs,
+            )
+            # Collect and reset internal results
+            beta_results = self.results
+            self.results = []
             alpha_results.extend(beta_results)
 
         self.results = alpha_results
