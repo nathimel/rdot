@@ -73,7 +73,7 @@ def blahut_arimoto_ib(
     max_it: int = 200,
     eps: float = 1e-5,
     ignore_converge: bool = False,
-) -> tuple[float]:
+) -> IBResult:
     """Estimate the optimal encoder for a given value of `beta` for the Information Bottleneck objective [Tishby et al., 1999].
 
     Args:
@@ -90,7 +90,7 @@ def blahut_arimoto_ib(
         ignore_converge: whether to run the optimization until `max_it`, ignoring the stopping criterion specified by `eps`.
 
     Returns:
-        a tuple of `(qxhat_x, rate, distortion, accuracy, beta)` values. This is:
+        a IBResult namedtuple of `(qxhat_x, rate, distortion, accuracy, beta)` values. This is:
             `qxhat_x`, the optimal encoder, such that the
 
             `rate` (in bits) of compressing X into X_hat, is minimized for the level of 

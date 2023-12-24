@@ -29,6 +29,11 @@ def ib_kl(py_x: np.ndarray, qy_xhat: np.ndarray) -> np.ndarray:
     # D[p(y|x) || q(y|xhat)]
     return DKL(py_x[:,None,:], qy_xhat[None,:,:], axis=2)
 
+def ib_bin_se(py_x: np.ndarray, qy_xhat: np.ndarray) -> np.ndarray:
+    # [ p(y=1|x) - q(y=1|xhat) ]^2
+    result = np.array([[(py[1] - qy[1])**2 for qy in qy_xhat] for py in py_x])
+    return result
+
 def feature_loss(fx: np.ndarray, fxhat: np.ndarray, weights: np.ndarray = None) -> np.ndarray:
     # 1/|f| sum_{i}^{|f|} w_i [ f(x)_i - f(\hat{x})_i ]^2
     if fx.shape != fxhat.shape:
@@ -47,7 +52,9 @@ def feature_loss(fx: np.ndarray, fxhat: np.ndarray, weights: np.ndarray = None) 
     return result
 
 def ib_mse(py_x: np.ndarray, qy_xhat: np.ndarray, fx: np.ndarray, fxhat: np.ndarray, alpha: float, weights: np.ndarray):
+    # breakpoint()
     return (
-        alpha * ib_kl(py_x, qy_xhat) 
-        + (1 - alpha) * 1/fx.shape[1] * feature_loss(fx, fxhat, weights)
+        alpha * ib_kl(py_x, qy_xhat)
+        # alpha * ib_bin_se(py_x, qy_xhat)
+        + (1 - alpha) * feature_loss(fx, fxhat, weights)
         )

@@ -84,7 +84,7 @@ def blahut_arimoto_ib_mse(
     max_it: int = 200,
     eps: float = 1e-5,
     ignore_converge: bool = False,
-) -> tuple[float]:
+) -> IBMSEesult:
     """Estimate the optimal encoder for given values of `beta` and `alpha` for the following modified IB objective:
 
         $\min_{q, f} \frac{1}{\beta} I[X:\hat{X}] + \alpha \mathbb{E}[D_{KL}[p(y|x) || p(y|\hat{x})]] + (1 - \alpha) \mathbb{E}[l(x, \hat{x})],
@@ -113,7 +113,7 @@ def blahut_arimoto_ib_mse(
         ignore_converge: whether to run the optimization until `max_it`, ignoring the stopping criterion specified by `eps`.
 
     Returns:
-        a tuple of `(qxhat_x, fxhat, rate, distortion, accuracy, beta, alpha)` values. This is:
+        an IBMSEResult namedtuple of `(qxhat_x, fxhat, rate, distortion, accuracy, beta, alpha)` values. This is:
             `qxhat_x`, the optimal encoder, 
 
             `fxhat`, corresponding feature vectors such that the 
@@ -169,9 +169,9 @@ def blahut_arimoto_ib_mse(
         )
 
         # f(xhat) = sum_x q(x|xhat) f(x)
-        # shape `(xhat, 1)`
+        # shape `(xhat, f)`
         ln_fxhat = logsumexp(
-            ln_qx_xhat[:, :,None] + ln_fx[None,:,:], # `(xhat, x, f)`
+            ln_qx_xhat[:,:,None] + ln_fx[None,:,:], # `(xhat, x, f)`
             axis=1,
         )
 

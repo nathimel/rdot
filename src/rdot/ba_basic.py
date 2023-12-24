@@ -45,7 +45,7 @@ def blahut_arimoto(
     max_it: int = 200,
     eps: float = 1e-5,
     ignore_converge: bool = False,
-) -> tuple[float]:
+) -> RateDistortionResult:
     """Compute the rate-distortion function of an i.i.d distribution p(x)
 
     Args:
@@ -62,7 +62,7 @@ def blahut_arimoto(
         ignore_converge: whether to run the optimization until `max_it`, ignoring the stopping criterion specified by `eps`.
 
     Returns:
-        a tuple of `(qxhat_x, rate, distortion, accuracy)` values. This is:
+        a RateDistortionResult namedtuple of `(qxhat_x, rate, distortion, accuracy)` values. This is:
             `qxhat_x`, the optimal encoder, such that the
 
             `rate` (in bits) of compressing X into X_hat, is minimized for the level of 

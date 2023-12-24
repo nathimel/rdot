@@ -48,13 +48,12 @@ class TestRDBinaryHamming:
         dist_mat = distortions.hamming(x, xhat)
         encoder, rate, dist, _ = ba_basic.blahut_arimoto(
             px=px,
-            dist_mat=dist_mat,            
+            dist_mat=dist_mat,
             beta=0., # evaluation beta
         )
 
         # The true R(D) function is bounded by H(p) - H(D); see Cover and Thomas, Rate Distortion Theory, Eq. (10.23).
         true_rate = information.H(p) - information.H(dist)
-
         assert rate >= true_rate
 
         # degenerate
