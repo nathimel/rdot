@@ -568,6 +568,7 @@ class TestIBMSE:
             alphas,
             num_restarts=1,
             weights=weights,
+            ensure_monotonicity=True,
         ).get_results()
 
 class TestPostProcessing:
