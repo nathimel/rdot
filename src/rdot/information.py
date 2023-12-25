@@ -28,8 +28,8 @@ def DKL(p, q, axis=None):
     )
 
 # Common pattern for rate-distortion optimizations
-def information_rate(pA: np.ndarray, pB_A: np.ndarray) -> float:
-    """Compute the information rate $I(A;B)$ of a joint distribution defind by $P(A)$ and $P(B|A)$
+def information_cond(pA: np.ndarray, pB_A: np.ndarray) -> float:
+    """Compute the mutual information $I(A;B)$ from a joint distribution defind by $P(A)$ and $P(B|A)$
     
     Args: 
         pA: array of shape `|A|` the prior probability of an input symbol (i.e., the source)    
@@ -38,6 +38,6 @@ def information_rate(pA: np.ndarray, pB_A: np.ndarray) -> float:
     """
     pXY = joint(pY_X=pB_A, pX=pA)
     mi = MI(pXY=pXY)
-    if mi < 0. and not np.isclose(mi, 0.):
+    if mi < 0. and not np.isclose(mi, 0., atol=1e-7):
         raise Exception
     return mi

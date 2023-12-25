@@ -7,7 +7,7 @@ from scipy.special import logsumexp
 from typing import Any
 from tqdm import tqdm
 from .distortions import expected_distortion, ib_kl, ib_mse
-from .information import information_rate
+from .information import information_cond
 from .probability import PRECISION, random_stochastic_matrix
 from .postprocessing import compute_lower_bound
 
@@ -154,7 +154,7 @@ class BaseRDOptimizer:
     
     def compute_rate(self, *args, **kwargs,) -> float:
         """Compute the information rate for the current p(x), q(xhat|x)."""
-        return information_rate(np.exp(self.ln_px), np.exp(self.ln_qxhat_x))
+        return information_cond(np.exp(self.ln_px), np.exp(self.ln_qxhat_x))
 
 
 ##############################################################################
@@ -322,6 +322,9 @@ class IBOptimizer(BaseRDOptimizer):
         self.ln_px = logsumexp(self.ln_pxy, axis=1) # `(x)`
         self.ln_py_x = self.ln_pxy - logsumexp(self.ln_pxy, axis=1, keepdims=True)  # `(x, y)`
         self.results: list[IBResult] = None
+
+    def get_results(self) -> list[IBResult]:
+        return super().get_results()        
     
     def next_dist_mat(self, *args, **kwargs,) -> None:
         """Vanilla IB distortion matrix."""
@@ -354,7 +357,7 @@ class IBOptimizer(BaseRDOptimizer):
             np.exp(self.ln_qxhat_x), 
             self.compute_rate(),
             self.compute_distortion(),
-            information_rate(
+            information_cond(
                 np.exp(self.ln_qxhat), np.exp(self.ln_qy_xhat),
             ),
             beta,
@@ -415,6 +418,9 @@ class IBMSEOptimizer(IBOptimizer):
         self.alphas = alphas
         self.ln_fx = np.log(fx + PRECISION) # `(x,f)`
         self.ln_fxhat = None  # `(xhat,f)`
+
+    def get_results(self) -> list[IBMSEResult]:
+        return super().get_results()
 
     def beta_iterate(
         self, 
@@ -494,7 +500,7 @@ class IBMSEOptimizer(IBOptimizer):
             np.exp(self.ln_fxhat),
             self.compute_rate(),
             self.compute_distortion(),
-            information_rate(
+            information_cond(
                 np.exp(self.ln_qxhat), np.exp(self.ln_qy_xhat),
             ),
             beta,

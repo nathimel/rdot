@@ -18,7 +18,7 @@ class TestRDBinaryHamming:
         # I(X;Y) <= log(min(|X|, |Y|))
         px = np.array([.5, .5,])
         pxhat_x = np.eye(2)
-        rate = information.information_rate(
+        rate = information.information_cond(
             px,
             pxhat_x
         )
@@ -285,7 +285,8 @@ class TestIB:
 
         optimizer = ba.IBOptimizer(pxy, betas)
         rd_values = [
-            (result.rate, result.distortion) for result in optimizer.get_results()
+            (result.rate, result.distortion) 
+            for result in optimizer.get_results() 
             if result is not None
         ]
 
