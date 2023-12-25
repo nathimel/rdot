@@ -313,8 +313,6 @@ class IBOptimizer(BaseRDOptimizer):
         Args:
             pxy: 2D array of shape `(|X|, |Y|)` representing the joint probability mass function of the source and relevance variables.
 
-            dist_mat: array of shape `(|X|, |X_hat|)` representing the distortion matrix between the input alphabet and the reconstruction alphabet.
-
             beta: (scalar) the slope of the rate-distoriton function at the point where evaluation is required
         """
         super().__init__(betas, *args, **kwargs)

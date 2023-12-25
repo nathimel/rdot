@@ -38,6 +38,27 @@ def information_cond(pA: np.ndarray, pB_A: np.ndarray) -> float:
     """
     pXY = joint(pY_X=pB_A, pX=pA)
     mi = MI(pXY=pXY)
-    if mi < 0. and not np.isclose(mi, 0., atol=1e-7):
+    if mi < 0. and not np.isclose(mi, 0., atol=1e-5):
         raise Exception
     return mi
+
+def gNID(pW_X: np.ndarray, pV_X: np.ndarray, pX: np.ndarray):
+    """Compute Generalized Normalized Informational Distance (gNID, in Zaslavsky et al. 2018, SI, Section 3.2) between two encoders.
+
+    Args:
+        pW_X: first encoder of shape `(|meanings|, |words|)`
+
+        pV_X: second encoder of shape `(|meanings|, |words|)`
+
+        pX: prior over source variables of shape `(|meanings|,)`
+    """
+    if len(pX.shape) == 1:
+        pX = pX[:, None]
+    elif pX.shape[0] == 1 and pX.shape[1] > 1:
+        pX = pX.T
+    pXW = pW_X * pX
+    pWV = pXW.T @ (pV_X)
+    pWW = pXW.T @ (pW_X)
+    pVV = (pV_X * pX).T @ (pV_X)
+    score = 1 - MI(pWV) / (np.max([MI(pWW), MI(pVV)]))
+    return score

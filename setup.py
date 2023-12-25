@@ -15,7 +15,7 @@ test_requirements = [
 
 setuptools.setup(
     name="rdot",
-    version="0.0.2",
+    version="0.0.21",
     author="Nathaniel Imel",
     author_email="nimel@uci.edu",
     description="Rate distortion optimization tools",
